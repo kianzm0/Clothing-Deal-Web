@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="ThreadScout compares clothing deals, saves favorites, and learns shopper preferences."
+    />
+    <title>ThreadScout | Clothing Deal Finder</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand-mark" href="#/">
+        <span class="brand-glyph">TS</span>
+        <span>
+          <strong>ThreadScout</strong>
+          <small>Deal finder</small>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="Primary navigation">
+        <a href="#/" data-nav="search">Search</a>
+        <a href="#/saved" data-nav="saved">Saved</a>
+        <a href="#/preferences" data-nav="preferences">Preferences</a>
+      </nav>
+    </header>
+
+    <main id="app" class="page-shell" tabindex="-1"></main>
+
+    <template id="product-card-template">
+      <article class="product-card">
+        <div class="product-image-wrap">
+          <a class="product-link image-link" href="#">
+            <img class="product-image" alt="" loading="lazy" />
+          </a>
+          <button class="icon-button save-button" type="button" aria-label="Save item">♡</button>
+        </div>
+        <div class="product-meta">
+          <div class="badge-row"></div>
+          <a class="product-link" href="#">
+            <span class="brand-line"></span>
+            <h3></h3>
+          </a>
+          <div class="price-line"></div>
+          <div class="offer-note"></div>
+          <div class="sizes-line"></div>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
