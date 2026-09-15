@@ -8,6 +8,15 @@ export interface Offer {
   sizesInStock: string[];
   lastUpdated: string; // ISO date
   url: string;
+  // Present when this offer was created or refreshed by the link
+  // scavenger (lib/scavenger.ts) rather than entered by hand.
+  sourceUrl?: string;
+  retailerDomain?: string;
+  availability?: string;
+  status?: "active" | "needs_review";
+  confidence?: number;
+  extractionSources?: string[];
+  lastScannedAt?: string;
 }
 
 export interface Product {
