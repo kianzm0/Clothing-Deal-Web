@@ -30,8 +30,8 @@ model Interaction {
   createdAt DateTime          @default(now())
   user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("interactions")
   @@index([userId])
+  @@map("interactions")
 }
 
 model BanditWeights {
@@ -83,7 +83,7 @@ model User {
 }
 
 model Product {
-  id       String    @id
+  id       String   @id
   name     String
   brand    String
   category Category
@@ -96,17 +96,27 @@ model Product {
 }
 
 model Offer {
-  id             String   @id @default(cuid())
-  store          String
-  price          Float
-  originalPrice  Float
-  shippingCost   Float
-  sizesInStock   String[]
-  lastUpdated    DateTime
-  url            String
-  productId      String
-  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  store         String
+  price         Float
+  originalPrice Float
+  shippingCost  Float
+  sizesInStock  String[]
+  lastUpdated   DateTime
+  url           String
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  @@map("offers")
+  // Populated when this offer was created or refreshed by the link
+  // scavenger (lib/scavenger.ts) rather than entered by hand.
+  sourceUrl         String?
+  retailerDomain    String?
+  availability      String    @default("unknown")
+  status            String    @default("active")
+  confidence        Float?
+  extractionSources String[]  @default([])
+  lastScannedAt     DateTime?
+
   @@index([productId])
+  @@map("offers")
 }

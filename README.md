@@ -163,8 +163,65 @@ just acts as an instant-read cache.
 One more migration after Phase 5's:
 `npx prisma migrate dev --name add_user_data`
 
-## Next up (Phase 7+, per your original roadmap)
+## Phase 7: Deal link scavenger (done)
 
-1. Real offers via affiliate feeds or retailer APIs (drop the scraping idea — ToS risk)
-2. Background jobs for price refresh + price-drop alerts
+An editor can paste a retailer product URL and get back a normalized,
+structured deal candidate — title, brand, image, price, list price,
+discount %, availability, SKU — instead of typing offer fields in by
+hand.
+
+- `lib/retailers.ts` — the allowlist of ingestible retailers (every
+  store already sold on this site, per `lib/data.ts`, plus the
+  general clothing retailers from the original plan) and URL
+  normalization that strips tracking params (`utm_*`, `gclid`,
+  `fbclid`, affiliate click IDs, …) before a link is stored.
+- `lib/scavenger.ts` — fetches the product page and extracts fields
+  from Schema.org JSON-LD first, then OpenGraph/meta tags, then raw
+  HTML price patterns as a last resort. Scores a 0–1 confidence and
+  marks anything below 0.7, or missing a price, as `needs_review`
+  instead of `active`.
+- `POST /api/scavenge` — `{ url }` → one deal candidate, for a
+  preview/review screen before anything is saved.
+- `POST /api/deal-links` — `{ urls: string[] }` → per-link
+  success/error results (HTTP 207), for pasting in a batch.
+- `POST /api/offers/ingest` — `{ productId, url }` → re-scrapes
+  server-side (never trusts a client-supplied candidate) and
+  upserts an `Offer` on that product, keyed by `(productId,
+  canonicalUrl)`. Re-submitting the same link refreshes price and
+  availability instead of duplicating — this doubles as the rescan
+  path.
+- `needs_review` offers are held back from `getAllProducts()` /
+  `getProductById()` in `lib/repository.ts`, so an incomplete
+  extraction can never surface as a live, clickable deal on its own.
+
+### Honest limitations
+
+- **This does scrape retailer pages**, which the note this section
+  replaces called out as ToS risk — worth knowing before pointing it
+  at retailers in production. It identifies itself with a descriptive
+  user agent and only targets an explicit allowlist, but many large
+  retailers (Nike, Target, Walmart, Amazon) run bot detection that
+  will block or CAPTCHA a server-side fetch like this outright. Treat
+  it as a starting point for smaller/DTC retailer sites and an
+  editorial paste-a-link workflow, not a scheduled scraper aimed at
+  major chains — the honest fix for those is still an affiliate feed
+  or retailer API, per the original plan.
+- **No review UI yet.** The API returns `warnings` and `confidence`
+  so a screen could show "extracted fields + Publish" per the
+  original spec, but that screen doesn't exist — right now ingestion
+  is a direct API call (`productId` + `url`), not a create-new-product
+  flow, since there's no reliable way to infer `category` (t-shirt vs.
+  hoodie vs. …) from a scraped page.
+- **No scheduled re-scan.** `POST /api/offers/ingest` refreshes an
+  offer on demand, but nothing calls it on a timer yet — see item 2
+  below.
+
+## Next up (Phase 8+, per your original roadmap)
+
+1. A review screen for scavenged candidates (`warnings` + `confidence`
+   already come back from the API; needs a UI plus a "create new
+   product" path with a category picker)
+2. Background jobs to re-run `/api/offers/ingest` on a schedule and
+   move stale/missing/out-of-stock offers to `needs_review` or a new
+   `expired` status
 3. Offline evaluation for the bandit (compare save-through rate vs. the old rule-based sort)
