@@ -17,6 +17,9 @@ export const DEFAULT_FILTERS: Filters = {
   sort: "best-match",
 };
 
+const selectClass =
+  "rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800 shadow-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100";
+
 export default function FilterBar({
   filters,
   brands,
@@ -27,9 +30,9 @@ export default function FilterBar({
   onChange: (next: Filters) => void;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-white p-4">
+    <div className="mb-6 flex flex-wrap items-center gap-2.5 rounded-2xl border border-ink-100 bg-white/60 p-3.5 shadow-card">
       <select
-        className="rounded border border-gray-300 px-2 py-1 text-sm"
+        className={selectClass}
         value={filters.category}
         onChange={(e) => onChange({ ...filters, category: e.target.value as Filters["category"] })}
       >
@@ -41,7 +44,7 @@ export default function FilterBar({
       </select>
 
       <select
-        className="rounded border border-gray-300 px-2 py-1 text-sm"
+        className={selectClass}
         value={filters.brand}
         onChange={(e) => onChange({ ...filters, brand: e.target.value })}
       >
@@ -51,28 +54,29 @@ export default function FilterBar({
         ))}
       </select>
 
-      <label className="flex items-center gap-2 text-sm text-gray-600">
-        Max $
+      <label className="flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-600 shadow-sm">
+        Max
         <input
           type="number"
-          className="w-20 rounded border border-gray-300 px-2 py-1"
+          className="w-16 bg-transparent text-ink-900 outline-none"
           value={filters.maxPrice}
           onChange={(e) => onChange({ ...filters, maxPrice: Number(e.target.value) })}
         />
       </label>
 
-      <label className="flex items-center gap-2 text-sm text-gray-600">
-        Min discount %
+      <label className="flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-600 shadow-sm">
+        Min off
         <input
           type="number"
-          className="w-16 rounded border border-gray-300 px-2 py-1"
+          className="w-12 bg-transparent text-ink-900 outline-none"
           value={filters.minDiscount}
           onChange={(e) => onChange({ ...filters, minDiscount: Number(e.target.value) })}
         />
+        %
       </label>
 
       <select
-        className="ml-auto rounded border border-gray-300 px-2 py-1 text-sm"
+        className={`${selectClass} ml-auto font-medium`}
         value={filters.sort}
         onChange={(e) => onChange({ ...filters, sort: e.target.value as SortOption })}
       >
