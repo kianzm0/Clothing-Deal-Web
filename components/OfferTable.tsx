@@ -16,40 +16,63 @@ export default function OfferTable({ product, offers }: { product: Product; offe
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-left text-gray-500">
-          <tr>
-            <th className="px-4 py-2">Store</th>
-            <th className="px-4 py-2">Price</th>
-            <th className="px-4 py-2">Shipping</th>
-            <th className="px-4 py-2">Sizes in stock</th>
-            <th className="px-4 py-2">Updated</th>
-            <th className="px-4 py-2"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {offers.map((offer, i) => (
-            <tr key={offer.store} className={i === 0 ? "bg-emerald-50" : "border-t border-gray-100"}>
-              <td className="px-4 py-3 font-medium">{offer.store}</td>
-              <td className="px-4 py-3">
-                ${offer.price}
-                {discountPct(offer) > 0 && (
-                  <span className="ml-2 text-xs font-medium text-emerald-600">-{discountPct(offer)}%</span>
+    <div className="space-y-2.5">
+      {offers.map((offer, i) => {
+        const isBest = i === 0;
+        const discount = discountPct(offer);
+        return (
+          <div
+            key={offer.store}
+            className={`flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border p-4 transition ${
+              isBest ? "border-brand-200 bg-brand-50/60 shadow-card" : "border-ink-100 bg-white"
+            }`}
+          >
+            <div className="min-w-[7rem]">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-ink-900">{offer.store}</span>
+                {isBest && (
+                  <span className="rounded-full bg-brand-500 px-2 py-0.5 text-xs font-semibold text-white">
+                    Best price
+                  </span>
                 )}
-              </td>
-              <td className="px-4 py-3">{offer.shippingCost === 0 ? "Free" : `$${offer.shippingCost}`}</td>
-              <td className="px-4 py-3">{offer.sizesInStock.join(", ")}</td>
-              <td className="px-4 py-3 text-gray-500">{daysSinceUpdate(offer)}d ago</td>
-              <td className="px-4 py-3">
-                <a href={offer.url} onClick={handleClickOut} className="text-brand-600 hover:underline">
-                  View →
-                </a>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </div>
+              <p className="mt-0.5 text-xs text-ink-400">Updated {daysSinceUpdate(offer)}d ago</p>
+            </div>
+
+            <div className="flex items-baseline gap-2">
+              <span className="text-lg font-bold text-ink-900">${offer.price}</span>
+              {discount > 0 && (
+                <>
+                  <span className="text-sm text-ink-300 line-through">${offer.originalPrice}</span>
+                  <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">
+                    -{discount}%
+                  </span>
+                </>
+              )}
+            </div>
+
+            <div className="text-sm text-ink-500">
+              {offer.shippingCost === 0 ? (
+                <span className="font-medium text-emerald-700">Free shipping</span>
+              ) : (
+                `$${offer.shippingCost} shipping`
+              )}
+            </div>
+
+            <div className="text-sm text-ink-500">
+              Sizes: <span className="text-ink-700">{offer.sizesInStock.join(", ") || "—"}</span>
+            </div>
+
+            <a
+              href={offer.url}
+              onClick={handleClickOut}
+              className="ml-auto rounded-full bg-ink-900 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-ink-800"
+            >
+              View deal →
+            </a>
+          </div>
+        );
+      })}
     </div>
   );
 }

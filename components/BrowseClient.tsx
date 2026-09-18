@@ -51,14 +51,25 @@ export default function BrowseClient({ products }: { products: Product[] }) {
 
   return (
     <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl">
+          Today's best clothing deals
+        </h1>
+        <p className="mt-1 text-sm text-ink-500">
+          Prices compared across stores, updated continuously.
+        </p>
+      </div>
+
       <FilterBar filters={filters} brands={brands} onChange={setFilters} />
-      <p className="mb-3 text-sm text-gray-500">
+
+      <p className="mb-3 text-sm text-ink-500">
         {results.length} results
         {bandit.signedIn && filters.sort === "best-match" && (
-          <span className="ml-2 text-xs text-brand-600">· learning from your activity</span>
+          <span className="ml-2 text-xs font-medium text-brand-600">· learning from your activity</span>
         )}
       </p>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {results.map((p) => (
           <ProductCard key={p.id} product={p} onInteract={bandit.recordInteraction} prefs={prefs} />
         ))}
