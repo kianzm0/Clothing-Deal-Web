@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getProductById } from "@/lib/repository";
-import { getWeights, saveWeights, logInteraction, countInteractions } from "@/lib/bandit-repository";
+import {
+  getWeights,
+  saveWeights,
+  logInteraction,
+  countInteractions,
+  loadPreferenceProfile,
+} from "@/lib/bandit-repository";
 import { featurize, updateWeights, REWARD_BY_ACTION } from "@/lib/bandit";
 import { DEFAULT_PREFERENCES, Preferences } from "@/lib/types";
 
@@ -33,9 +39,11 @@ export async function POST(req: Request) {
 
   const userId = session.user.id;
   const reward = REWARD_BY_ACTION[action];
-  const features = featurize(product, prefs);
-
-  const currentWeights = await getWeights(userId);
+  // Featurize against the profile as it stood *before* this
+  // interaction — the same view the user was ranked with — so the
+  // gradient step credits what the model actually knew at the time.
+  const [currentWeights, profileBefore] = await Promise.all([getWeights(userId), loadPreferenceProfile(userId)]);
+  const features = featurize(product, prefs, profileBefore);
   const nextWeights = updateWeights(currentWeights, features, reward);
 
   await Promise.all([
@@ -43,7 +51,7 @@ export async function POST(req: Request) {
     saveWeights(userId, nextWeights),
   ]);
 
-  const interactionCount = await countInteractions(userId);
+  const [interactionCount, profile] = await Promise.all([countInteractions(userId), loadPreferenceProfile(userId)]);
 
-  return NextResponse.json({ trained: true, weights: nextWeights, interactionCount });
+  return NextResponse.json({ trained: true, weights: nextWeights, interactionCount, profile });
 }

@@ -60,3 +60,13 @@ export async function getProductById(id: string): Promise<Product | undefined> {
   const product = toProduct(row);
   return product.offers.length > 0 ? product : undefined;
 }
+
+// Bulk lookup for the preference model, which needs the products
+// behind a user's interaction history. Same visibility rules as
+// getProductById: a product with no live offer is skipped, since its
+// price band can't be computed.
+export async function getProductsByIds(ids: string[]): Promise<Product[]> {
+  if (ids.length === 0) return [];
+  const rows = await prisma.product.findMany({ where: { id: { in: ids } }, include: { offers: true } });
+  return rows.map(toProduct).filter((product) => product.offers.length > 0);
+}

@@ -1,5 +1,6 @@
 import { Preferences, Product } from "./types";
 import { bestOffer, discountPct } from "./pricing";
+import { PreferenceProfile, learnedAffinity, similarityToLiked } from "./preference-model";
 
 // Contextual bandit for "Best match" ranking.
 //
@@ -28,6 +29,10 @@ export const FEATURE_NAMES = [
   "sizeMatch",
   "discountFrac",
   "priceFit",
+  // Implicit signals learned from the user's own interaction history
+  // (lib/preference-model.ts) rather than the explicit preferences form.
+  "learnedAffinity",
+  "similarToLiked",
 ] as const;
 
 export type FeatureVector = number[];
@@ -35,9 +40,17 @@ export type FeatureVector = number[];
 // Informed prior, not a blank slate: cold start (a brand-new user
 // with zero interactions) should still roughly track the old
 // rule-based scoring, not rank randomly until enough data arrives.
-export const DEFAULT_WEIGHTS: number[] = [0, 1.2, -2.0, 0.6, 0.6, 1.0, 0.8];
+export const DEFAULT_WEIGHTS: number[] = [0, 1.2, -2.0, 0.6, 0.6, 1.0, 0.8, 1.5, 1.0];
 
-export function featurize(product: Product, prefs: Preferences): FeatureVector {
+// Weights saved before a feature was added are shorter than
+// DEFAULT_WEIGHTS. Pad them with the prior for the new features so
+// existing users keep what they've learned instead of being reset.
+export function alignWeights(weights: number[]): number[] {
+  if (weights.length >= DEFAULT_WEIGHTS.length) return weights.slice(0, DEFAULT_WEIGHTS.length);
+  return [...weights, ...DEFAULT_WEIGHTS.slice(weights.length)];
+}
+
+export function featurize(product: Product, prefs: Preferences, profile?: PreferenceProfile): FeatureVector {
   const offer = bestOffer(product);
   const discount = discountPct(offer) / 100;
   const priceFit = offer.price <= prefs.maxBudget ? 1 : -1;
@@ -50,6 +63,8 @@ export function featurize(product: Product, prefs: Preferences): FeatureVector {
     product.sizes.some((s) => prefs.sizes.includes(s)) ? 1 : 0,
     discount,
     priceFit,
+    profile ? learnedAffinity(product, profile) : 0,
+    profile ? similarityToLiked(product, profile) : 0,
   ];
 }
 
