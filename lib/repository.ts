@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { PRODUCTS } from "./data";
 import { Category, Offer, Product } from "./types";
 
 // This is the file that changed for Phase 3. Pages still call only
@@ -49,16 +50,40 @@ function toProduct(row: any): Product {
   };
 }
 
+// When the database isn't configured or reachable (e.g. a Vercel
+// preview deployment without DATABASE_URL, or a database that hasn't
+// been migrated), browsing falls back to the seeded catalog instead
+// of crashing the whole page. Account features still need the DB.
+async function withCatalogFallback<T>(query: () => Promise<T>, fallback: () => T): Promise<T> {
+  if (!process.env.DATABASE_URL) return fallback();
+  try {
+    return await query();
+  } catch (err) {
+    console.error("Product query failed; serving the seeded catalog instead.", err);
+    return fallback();
+  }
+}
+
 export async function getAllProducts(): Promise<Product[]> {
-  const rows = await prisma.product.findMany({ include: { offers: true } });
-  return rows.map(toProduct).filter((product) => product.offers.length > 0);
+  return withCatalogFallback(
+    async () => {
+      const rows = await prisma.product.findMany({ include: { offers: true } });
+      return rows.map(toProduct).filter((product) => product.offers.length > 0);
+    },
+    () => PRODUCTS
+  );
 }
 
 export async function getProductById(id: string): Promise<Product | undefined> {
-  const row = await prisma.product.findUnique({ where: { id }, include: { offers: true } });
-  if (!row) return undefined;
-  const product = toProduct(row);
-  return product.offers.length > 0 ? product : undefined;
+  return withCatalogFallback(
+    async () => {
+      const row = await prisma.product.findUnique({ where: { id }, include: { offers: true } });
+      if (!row) return undefined;
+      const product = toProduct(row);
+      return product.offers.length > 0 ? product : undefined;
+    },
+    () => PRODUCTS.find((p) => p.id === id)
+  );
 }
 
 // Bulk lookup for the preference model, which needs the products
