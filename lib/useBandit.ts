@@ -2,12 +2,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { DEFAULT_WEIGHTS, explorationScore, featurize, predict } from "./bandit";
+import { EMPTY_PROFILE, PreferenceProfile } from "./preference-model";
 import { Preferences, Product } from "./types";
 
 export function useBandit() {
   const { status } = useSession();
   const [weights, setWeights] = useState<number[]>(DEFAULT_WEIGHTS);
   const [interactionCount, setInteractionCount] = useState(0);
+  const [profile, setProfile] = useState<PreferenceProfile>(EMPTY_PROFILE);
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
@@ -18,6 +20,7 @@ export function useBandit() {
         if (data.signedIn) {
           setWeights(data.weights);
           setInteractionCount(data.interactionCount);
+          setProfile(data.profile ?? EMPTY_PROFILE);
           setSignedIn(true);
         }
       })
@@ -29,11 +32,11 @@ export function useBandit() {
   // the caller's fallback — see BrowseClient.
   const scoreProduct = useCallback(
     (product: Product, prefs: Preferences): number => {
-      const features = featurize(product, prefs);
+      const features = featurize(product, prefs, profile);
       const base = predict(weights, features);
       return explorationScore(base, interactionCount);
     },
-    [weights, interactionCount]
+    [weights, interactionCount, profile]
   );
 
   const recordInteraction = useCallback(
@@ -49,6 +52,7 @@ export function useBandit() {
         if (data.trained) {
           setWeights(data.weights);
           setInteractionCount(data.interactionCount);
+          if (data.profile) setProfile(data.profile);
         }
       } catch {
         // Best-effort: a dropped interaction just means one less
@@ -58,5 +62,5 @@ export function useBandit() {
     [signedIn]
   );
 
-  return { signedIn, scoreProduct, recordInteraction };
+  return { signedIn, profile, scoreProduct, recordInteraction };
 }

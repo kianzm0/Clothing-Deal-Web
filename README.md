@@ -216,7 +216,51 @@ hand.
   offer on demand, but nothing calls it on a timer yet — see item 2
   below.
 
-## Next up (Phase 8+, per your original roadmap)
+## Phase 8: Learning implicit preferences (done)
+
+Before this, every feature the bandit could weigh came from the
+explicit preferences form. Someone who never listed Nike as a
+favorite but saved every Nike hoodie they saw would never get more
+Nike hoodies — the model had no feature that could notice.
+`lib/preference-model.ts` adds a model that learns from what users
+actually do, not just what they typed in.
+
+### How it works
+
+- Every product becomes a set of attribute tokens: brand, category,
+  each color, and a price band.
+- **Per-attribute affinities (Beta-Bernoulli).** Each token keeps a
+  time-decayed tally of positive vs. negative reward from the
+  `Interaction` log. The posterior mean with a Beta(1, 1) prior means
+  one save barely moves an affinity and ten move it a lot. Activity
+  has a 30-day half-life, so tastes can change over time.
+- **Item-to-item similarity (content-based kNN).** The highest cosine
+  similarity between a product and the items the user liked. This
+  picks up combinations ("black Nike hoodies") that separate
+  per-token affinities miss. A later "Not interested" removes an item
+  from the liked set.
+- Both are two new bandit features, `learnedAffinity` and
+  `similarToLiked`. Existing users' stored weights are padded with
+  the prior for the new features (`alignWeights`), not reset.
+- The profile is rebuilt from the last 300 interactions on the
+  server and returned by `/api/bandit-weights` and
+  `/api/interactions`, so the client re-ranks right away.
+- **Visible and editable:** the preferences page has a "Learned from
+  your activity" panel that shows what the model picked up and offers
+  one-click suggestions: add a favorite or disliked brand, add a
+  color, or set a budget based on what you actually saved.
+
+No migration needed. It reads the existing `interactions` table.
+
+### Honest limitations
+
+- Content-based only: it learns from item attributes, not from other
+  users (no collaborative filtering). That's the right call at this
+  traffic level, but "people who saved X also saved Y" would need
+  real cross-user volume.
+- Still no offline evaluation — see item 3 below.
+
+## Next up (Phase 9+, per your original roadmap)
 
 1. A review screen for scavenged candidates (`warnings` + `confidence`
    already come back from the API; needs a UI plus a "create new

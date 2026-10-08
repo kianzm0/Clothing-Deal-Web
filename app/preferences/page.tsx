@@ -1,6 +1,7 @@
 "use client";
 import { usePreferences } from "@/lib/store";
 import { PRODUCTS } from "@/lib/data";
+import LearnedPreferences from "@/components/LearnedPreferences";
 
 const ALL_BRANDS = Array.from(new Set(PRODUCTS.map((p) => p.brand))).sort();
 const ALL_COLORS = Array.from(new Set(PRODUCTS.flatMap((p) => p.colors))).sort();
@@ -42,7 +43,7 @@ export default function PreferencesPage() {
     <div className="max-w-2xl">
       <h1 className="mb-1 text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl">Preferences</h1>
       <p className="mb-6 text-sm text-ink-500">
-        These drive the rule-based "Best match" sort on the browse page.
+        These drive the "Best match" sort on the browse page. When you're signed in, it also learns from what you save and skip.
       </p>
 
       <div className="rounded-2xl border border-ink-100 bg-white p-6 shadow-card">
@@ -109,6 +110,8 @@ export default function PreferencesPage() {
           </div>
         </Section>
       </div>
+
+      <LearnedPreferences prefs={prefs} update={update} />
     </div>
   );
 }
