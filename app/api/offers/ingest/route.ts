@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { scavengeProductUrl } from "@/lib/scavenger";
+import { ingestDealForProduct } from "@/lib/offer-ingest";
 import { scavengerErrorResponse } from "@/lib/scavenger-response";
 
 // Turns a scavenged product link into a real Offer on an existing
@@ -22,39 +22,10 @@ export async function POST(req: Request) {
   const product = await prisma.product.findUnique({ where: { id: productId } });
   if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
 
-  let deal;
   try {
-    deal = await scavengeProductUrl(url);
+    const result = await ingestDealForProduct(productId, url);
+    return NextResponse.json({ offer: result.offer, warnings: result.deal.warnings }, { status: result.created ? 201 : 200 });
   } catch (error) {
     return scavengerErrorResponse(error);
   }
-
-  const existing = await prisma.offer.findFirst({ where: { productId, url: deal.canonicalUrl } });
-
-  const priceDollars = deal.priceCents !== null ? deal.priceCents / 100 : existing?.price ?? 0;
-  const originalPriceDollars =
-    deal.listPriceCents !== null ? deal.listPriceCents / 100 : existing?.originalPrice ?? priceDollars;
-
-  const data = {
-    store: deal.retailerName,
-    price: priceDollars,
-    originalPrice: originalPriceDollars,
-    shippingCost: existing?.shippingCost ?? 0,
-    sizesInStock: existing?.sizesInStock ?? [],
-    lastUpdated: new Date(deal.fetchedAt),
-    url: deal.canonicalUrl,
-    sourceUrl: deal.sourceUrl,
-    retailerDomain: deal.retailerDomain,
-    availability: deal.availability,
-    status: deal.status,
-    confidence: deal.confidence,
-    extractionSources: deal.extractionSources,
-    lastScannedAt: new Date(deal.fetchedAt),
-  };
-
-  const offer = existing
-    ? await prisma.offer.update({ where: { id: existing.id }, data })
-    : await prisma.offer.create({ data: { ...data, productId } });
-
-  return NextResponse.json({ offer, warnings: deal.warnings }, { status: existing ? 200 : 201 });
 }

@@ -206,12 +206,13 @@ hand.
   editorial paste-a-link workflow, not a scheduled scraper aimed at
   major chains — the honest fix for those is still an affiliate feed
   or retailer API, per the original plan.
-- **No review UI yet.** The API returns `warnings` and `confidence`
-  so a screen could show "extracted fields + Publish" per the
-  original spec, but that screen doesn't exist — right now ingestion
-  is a direct API call (`productId` + `url`), not a create-new-product
-  flow, since there's no reliable way to infer `category` (t-shirt vs.
-  hoodie vs. …) from a scraped page.
+- **Review screen is now available at `/review`.** Signed-in editors
+  can inspect extracted fields, confidence warnings, and the source
+  page; correct the name, brand, or prices; choose a category for a
+  new product; and approve publication either by creating a product
+  or attaching the offer to an existing product. The publish route
+  re-fetches the URL server-side and shares the same ingestion service
+  as `POST /api/offers/ingest`.
 - **No scheduled re-scan.** `POST /api/offers/ingest` refreshes an
   offer on demand, but nothing calls it on a timer yet — see item 2
   below.
