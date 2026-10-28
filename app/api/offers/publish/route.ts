@@ -16,6 +16,7 @@ export async function POST(req: Request) {
   try { overrides = parseReviewOverrides(body.overrides); } catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
   try {
     const preview = await scavengeProductUrl(body.url);
+    if (overrides.priceCents === undefined && preview.priceCents === null) return NextResponse.json({ error: "A current price is required before publishing." }, { status: 400 });
     let productId = typeof body.productId === "string" && body.productId.trim() ? body.productId : undefined;
     if (productId) {
       if (!await prisma.product.findUnique({ where: { id: productId }, select: { id: true } })) return NextResponse.json({ error: "Product not found." }, { status: 404 });
