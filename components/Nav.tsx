@@ -35,6 +35,7 @@ export default function Nav() {
           <NavLink href="/">Browse</NavLink>
           <NavLink href="/watchlist">Watchlist</NavLink>
           <NavLink href="/preferences">Preferences</NavLink>
+          <NavLink href="/review">Review deal</NavLink>
 
           <span className="mx-1 hidden h-4 w-px bg-ink-200 sm:inline-block" />
 
