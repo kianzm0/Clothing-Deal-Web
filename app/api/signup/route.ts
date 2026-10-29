@@ -19,7 +19,8 @@ export async function POST(req: Request) {
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await prisma.user.create({
-    data: { email: email.toLowerCase(), passwordHash, name: name || undefined },
+    // Public registration never accepts a client-supplied role.
+    data: { email: email.toLowerCase(), passwordHash, name: name || undefined, role: "USER" },
   });
 
   return NextResponse.json({ id: user.id, email: user.email });

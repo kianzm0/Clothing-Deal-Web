@@ -1,0 +1,56 @@
+name: Authorization regression checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, fix/editorial-authorization]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: threadscout_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/threadscout_test
+      NEXTAUTH_SECRET: authorization-ci-only-not-a-production-secret
+      NEXTAUTH_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Recreate an existing deployment with a customer account
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/0_baseline/migration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO users (id, email, \"passwordHash\") VALUES ('authorization-test-legacy', 'legacy@authorization.test', 'unchanged-test-hash');"
+          npx prisma migrate resolve --applied 0_baseline
+          npx prisma migrate deploy
+      - name: Verify the upgraded schema and role provisioning
+        run: |
+          npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+          npx tsx scripts/test-role-migration.ts
+        env:
+          AUTHORIZATION_TEST_DATABASE: "1"
+      - name: Verify migrations also work on an empty schema
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/threadscout_test?schema=fresh
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireEditorialAccess } from "@/lib/authorization";
 import { prisma } from "@/lib/prisma";
 import { ingestDealForProduct } from "@/lib/offer-ingest";
 import { scavengerErrorResponse } from "@/lib/scavenger-response";
@@ -11,8 +10,8 @@ import { scavengerErrorResponse } from "@/lib/scavenger-response";
 // re-submitting the same link refreshes price/availability instead
 // of creating a duplicate row — this is the rescan path too.
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  const denied = await requireEditorialAccess();
+  if (denied) return denied;
 
   const { productId, url } = await req.json().catch(() => ({}));
   if (!productId || !url) {

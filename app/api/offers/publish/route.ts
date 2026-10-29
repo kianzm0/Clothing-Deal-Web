@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireEditorialAccess } from "@/lib/authorization";
 import { prisma } from "@/lib/prisma";
 import { ingestDealForProduct } from "@/lib/offer-ingest";
 import { parseReviewOverrides, requireNewProductFields } from "@/lib/review";
@@ -8,8 +7,8 @@ import { scavengerErrorResponse } from "@/lib/scavenger-response";
 import { scavengeProductUrl } from "@/lib/scavenger";
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  const denied = await requireEditorialAccess();
+  if (denied) return denied;
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body || typeof body.url !== "string" || !body.url.trim()) return NextResponse.json({ error: "url is required." }, { status: 400 });
   let overrides;
