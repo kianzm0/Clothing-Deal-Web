@@ -37,6 +37,21 @@ export const authOptions: AuthOptions = {
     },
     async session({ session, token }) {
       if (token.id) session.user.id = token.id;
+      // UI hint only; editorial handlers independently recheck the database.
+      // Do not copy roles from the JWT or from a client session update.
+      session.user.role = "USER";
+      if (token.id) {
+        try {
+          const user = await prisma.user.findUnique({
+            where: { id: token.id },
+            select: { role: true },
+          });
+          session.user.role = user?.role ?? "USER";
+        } catch {
+          // Keep ordinary account sessions usable, but hide editorial UI.
+          console.error("Unable to load session permissions.");
+        }
+      }
       return session;
     },
   },

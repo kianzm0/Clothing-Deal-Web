@@ -14,6 +14,91 @@ npm run dev
 
 Open http://localhost:3000
 
+## Editorial permissions and deployment
+
+Accounts have a database `UserRole`: `USER` (customer), `EDITOR`, or `ADMIN`.
+Only editors and administrators may use `/review` or POST to `/api/scavenge`,
+`/api/deal-links`, `/api/offers/ingest`, and `/api/offers/publish`. These APIs
+return 401 for visitors, 403 for accounts without editorial access (including
+deleted accounts), and 503 if permissions cannot be verified. Checks run before
+body parsing, retailer requests, or catalog operations. The review page redirects
+visitors to sign in and returns not-found for customers before loading products.
+
+The navigation role is refreshed from the database when the session is loaded.
+Each editorial request independently checks the current database role, so revoking
+access blocks the next request even with an old session or a stale navigation link.
+Client role fields, session updates, and JWT role claims do not grant access.
+Preference writes allow only preference fields, blocking nested Prisma relation
+writes that could otherwise be used to alter a user's role.
+Browsing, signup, watchlists, preferences, and recommendation learning remain
+available under their existing rules. `ADMIN` currently has the same catalog
+permissions as `EDITOR`; neither role can grant roles through a web endpoint.
+
+### Apply the schema before deploying the application
+
+This repository previously had no committed migrations. `0_baseline` represents
+the schema before roles; `20261029000000_editorial_roles` adds the role column with
+a `USER` default. **No existing account is automatically promoted.**
+
+For a **new, empty database**, run `npx prisma migrate deploy`, then
+`npx prisma generate`. For an **existing database**, back it up and first inspect:
+
+```bash
+npx prisma migrate status
+npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script
+```
+
+The schema difference must contain only the new `UserRole` enum and `users.role`
+column. Reconcile any other drift or locally maintained migration history before
+proceeding. On a database matching the pre-role schema, mark only the baseline as
+already applied, then apply the additive role migration:
+
+```bash
+npx prisma migrate resolve --applied 0_baseline
+npx prisma migrate deploy
+npx prisma generate
+npm run build
+```
+
+Do not run the baseline SQL over existing tables, reset production, or mark the
+role migration as applied without executing it. These instructions supersede the
+historical Phase 3–6 migration setup below. Baseline guidance:
+[Prisma Migrate documentation](https://www.prisma.io/docs/orm/v6/prisma-migrate/getting-started#adding-prisma-migrate-to-an-existing-project).
+
+### Grant or revoke editorial access
+
+A trusted operator with database credentials must verify the intended person's
+existing account and immutable user ID (for example in Prisma Studio). Run the
+following from a trusted checkout with `DATABASE_URL` set for the intended
+environment; these commands never run automatically during signup, seeding,
+installation, or deployment:
+
+```bash
+npm run user:role -- --user-id <verified-user-id> --role EDITOR
+npm run user:role -- --user-id <verified-user-id> --role ADMIN
+npm run user:role -- --user-id <verified-user-id> --role USER
+```
+
+Use one command for the desired role; `USER` revokes editorial access. The command
+requires an explicit ID and valid role, changes only that existing account, fails
+for unknown IDs, and prints a timestamped before/after record for the operator's
+audit log. It does not create accounts or match emails/domains automatically.
+Keep database credentials restricted to trusted operators. Refresh the browser
+session to update navigation after a grant or revocation.
+
+### Authorization verification
+
+`npm test` runs the real route handlers and permission helper with mocked session,
+database, and retailer-network boundaries. Coverage includes visitors, customers,
+editors, administrators, stale/spoofed roles, deleted accounts, permission-store
+failures, role revocation, signup, review-page access, navigation, and customer
+features. `npm run typecheck` checks the generated Prisma and application types.
+
+The authorization GitHub Actions workflow also tests migration of an existing
+customer account and explicit grant/revocation commands against disposable
+Postgres, checks schema drift, applies migrations to an empty schema, and runs
+the production build. No tests target the deployed application or its database.
+
 ## What changed vs. the static MVP
 
 - All data flows through `lib/repository.ts`. That is the ONLY file

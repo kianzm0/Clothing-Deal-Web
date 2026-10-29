@@ -68,11 +68,18 @@ model Preference {
   @@map("preferences")
 }
 
+enum UserRole {
+  USER
+  EDITOR
+  ADMIN
+}
+
 model User {
   id             String          @id @default(cuid())
   email          String          @unique
   name           String?
   passwordHash   String
+  role           UserRole        @default(USER)
   createdAt      DateTime        @default(now())
   interactions   Interaction[]
   banditWeights  BanditWeights?

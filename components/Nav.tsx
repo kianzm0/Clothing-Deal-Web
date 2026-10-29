@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
+import { canEditCatalog } from "@/lib/roles";
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   const pathname = usePathname();
@@ -35,7 +36,9 @@ export default function Nav() {
           <NavLink href="/">Browse</NavLink>
           <NavLink href="/watchlist">Watchlist</NavLink>
           <NavLink href="/preferences">Preferences</NavLink>
-          <NavLink href="/review">Review deal</NavLink>
+          {status === "authenticated" && canEditCatalog(session.user?.role) && (
+            <NavLink href="/review">Review deal</NavLink>
+          )}
 
           <span className="mx-1 hidden h-4 w-px bg-ink-200 sm:inline-block" />
 

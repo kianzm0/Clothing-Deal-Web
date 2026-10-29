@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --import tsx --test lib/**/*.test.ts",
+    "test": "tsx --tsconfig tsconfig.test.json --test lib/*.test.ts",
+    "user:role": "tsx scripts/set-user-role.ts",
+    "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate"
   },
   "dependencies": {
