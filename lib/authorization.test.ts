@@ -25,8 +25,17 @@ import { parseRoleChange, setUserRole } from "../scripts/set-user-role";
 // Mock only the session, database, and retailer network boundaries. Route handlers,
 // permission checks, extraction, ingestion, callbacks, and components run unchanged.
 const nextAuth = require("next-auth/next");
+const restorations: Array<() => void> = [];
 function stub(target: object, method: string, implementation: (...args: any[]) => any) {
-  return mock.method(target as Record<string, (...args: any[]) => any>, method, implementation);
+  // Prisma delegates are proxies whose property descriptors omit method values;
+  // assign a tracked function instead of using descriptor-based mock.method.
+  const object = target as Record<string, (...args: any[]) => any>;
+  const original = object[method];
+  assert.equal(typeof original, "function", `Missing test boundary: ${method}`);
+  const spy = mock.fn(implementation);
+  object[method] = spy;
+  restorations.push(() => { object[method] = original; });
+  return spy;
 }
 const userSession = (role: Session["user"]["role"] = "USER"): Session => ({
   user: { id: "user-1", email: "customer@example.test", role },
@@ -73,7 +82,10 @@ beforeEach(() => {
     offers: { price: "20.00", priceCurrency: "USD", availability: "https://schema.org/InStock" },
   })}</script>`, { headers: { "content-type": "text/html" } }));
 });
-afterEach(() => mock.restoreAll());
+afterEach(() => {
+  while (restorations.length) restorations.pop()!();
+  mock.restoreAll();
+});
 
 function request(body: unknown, method = "POST") {
   return new Request("http://localhost/api/test", {
@@ -162,7 +174,7 @@ test("signup ignores an injected role and creates only a USER", async () => {
 
 test("session role comes from the database and ignores stale token/session role claims", async () => {
   const callback = authOptions.callbacks!.session!;
-  const run = async () => await callback({ session: userSession("ADMIN"), token: { id: "user-1", role: "ADMIN" } } as Parameters<typeof callback>[0]) as Session;
+  const run = async () => await callback({ session: userSession("ADMIN"), token: { id: "user-1", role: "ADMIN" } } as unknown as Parameters<typeof callback>[0]) as Session;
   assert.equal((await run()).user.role, "USER");
   databaseRole = "EDITOR";
   assert.equal((await run()).user.role, "EDITOR");

@@ -3,7 +3,11 @@ name: Authorization regression checks
 on:
   pull_request:
   push:
-    branches: [main, fix/editorial-authorization]
+    branches: [main]
+
+defaults:
+  run:
+    shell: bash
 
 permissions:
   contents: read
