@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { prisma } from "../lib/prisma";
+import { savePreferences } from "../lib/user-data-repository";
+import { DEFAULT_PREFERENCES } from "../lib/types";
 
 // This is run only against the disposable Postgres service in CI.
 async function main() {
@@ -12,6 +14,16 @@ async function main() {
     id: "authorization-test-new", email: "new@authorization.test", passwordHash: "test-only",
   } });
   assert.equal(fresh.role, "USER");
+  const maliciousPreferences = {
+    ...DEFAULT_PREFERENCES, userId: legacy.id, role: "ADMIN",
+    user: { update: { role: "ADMIN" } },
+  };
+  // Exercise both create and update paths against real Prisma/Postgres.
+  await savePreferences(fresh.id, maliciousPreferences);
+  await savePreferences(fresh.id, maliciousPreferences);
+  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: fresh.id } })).role, "USER");
+  assert.equal((await prisma.preference.findUniqueOrThrow({ where: { userId: fresh.id } })).userId, fresh.id);
+  assert.equal(await prisma.preference.findUnique({ where: { userId: legacy.id } }), null);
 
   function runRole(userId: string, role: string) {
     return spawnSync(process.execPath, ["--import", "tsx", "scripts/set-user-role.ts", "--user-id", userId, "--role", role], {

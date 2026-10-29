@@ -33,9 +33,20 @@ export async function getPreferences(userId: string): Promise<Preferences> {
 }
 
 export async function savePreferences(userId: string, prefs: Preferences): Promise<void> {
+  // Preferences come from a public account API. Never pass arbitrary input to
+  // Prisma: relation writes such as user.update could otherwise grant a role.
+  const data = {
+    sizes: prefs.sizes,
+    favoriteBrands: prefs.favoriteBrands,
+    dislikedBrands: prefs.dislikedBrands,
+    colors: prefs.colors,
+    fits: prefs.fits,
+    maxBudget: prefs.maxBudget,
+    minDiscountPct: prefs.minDiscountPct,
+  };
   await prisma.preference.upsert({
     where: { userId },
-    update: { ...prefs },
-    create: { userId, ...prefs },
+    update: data,
+    create: { userId, ...data },
   });
 }

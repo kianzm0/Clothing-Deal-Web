@@ -28,6 +28,8 @@ The navigation role is refreshed from the database when the session is loaded.
 Each editorial request independently checks the current database role, so revoking
 access blocks the next request even with an old session or a stale navigation link.
 Client role fields, session updates, and JWT role claims do not grant access.
+Preference writes allow only preference fields, blocking nested Prisma relation
+writes that could otherwise be used to alter a user's role.
 Browsing, signup, watchlists, preferences, and recommendation learning remain
 available under their existing rules. `ADMIN` currently has the same catalog
 permissions as `EDITOR`; neither role can grant roles through a web endpoint.

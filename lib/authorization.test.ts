@@ -162,7 +162,7 @@ test("signup ignores an injected role and creates only a USER", async () => {
 
 test("session role comes from the database and ignores stale token/session role claims", async () => {
   const callback = authOptions.callbacks!.session!;
-  const run = () => callback({ session: userSession("ADMIN"), token: { id: "user-1", role: "ADMIN" } } as Parameters<typeof callback>[0]);
+  const run = async () => await callback({ session: userSession("ADMIN"), token: { id: "user-1", role: "ADMIN" } } as Parameters<typeof callback>[0]) as Session;
   assert.equal((await run()).user.role, "USER");
   databaseRole = "EDITOR";
   assert.equal((await run()).user.role, "EDITOR");
@@ -205,7 +205,8 @@ test("navigation shows Review deal only for editors and administrators", () => {
   for (const role of [null, "USER", "EDITOR", "ADMIN"] as const) {
     const html = renderToStaticMarkup(React.createElement(SessionProvider, {
       session: role === null ? null : userSession(role),
-    }, React.createElement(Nav)));
+      children: React.createElement(Nav),
+    }));
     assert.equal(html.includes('href="/review"'), role === "EDITOR" || role === "ADMIN");
     for (const href of ["/", "/watchlist", "/preferences"]) assert.ok(html.includes(`href="${href}"`));
   }
@@ -245,6 +246,19 @@ test("public catalog browsing and signed-out recommendation defaults remain avai
   assert.equal((await (await watchlist.GET()).json()).signedIn, false);
   assert.equal((await (await preferences.GET()).json()).signedIn, false);
   assert.equal(roleRead.mock.callCount(), 0);
+});
+
+test("customer preferences cannot smuggle a nested user role update or another user ID into Prisma", async () => {
+  const upsert = stub(prisma.preference, "upsert", async () => ({}));
+  const res = await preferences.PUT(request({
+    ...DEFAULT_PREFERENCES, userId: "editor", role: "ADMIN",
+    user: { update: { role: "ADMIN" } },
+  }, "PUT"));
+  assert.equal(res.status, 200);
+  assert.deepEqual(upsert.mock.calls[0].arguments[0], {
+    where: { userId: "user-1" }, update: DEFAULT_PREFERENCES,
+    create: { userId: "user-1", ...DEFAULT_PREFERENCES },
+  });
 });
 
 test("role provisioning requires one explicit existing ID and a valid role", async () => {
