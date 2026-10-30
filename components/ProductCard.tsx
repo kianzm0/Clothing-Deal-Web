@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Preferences, Product } from "@/lib/types";
 import { bestOffer, discountPct } from "@/lib/pricing";
 import { useWatchlist } from "@/lib/store";
+import { recommendationOffer } from "@/lib/recommendation-offer";
 import { CATEGORY_GLYPH } from "@/lib/category";
 
 type InteractionAction = "SAVE" | "UNSAVE" | "SKIP" | "CLICK_OUT";
@@ -12,12 +13,14 @@ export default function ProductCard({
   product,
   onInteract,
   prefs,
+  reasons,
 }: {
   product: Product;
   onInteract?: (productId: string, action: InteractionAction, prefs: Preferences) => void;
   prefs?: Preferences;
+  reasons?: string[];
 }) {
-  const offer = bestOffer(product);
+  const offer = (prefs ? recommendationOffer(product, prefs) : undefined) ?? bestOffer(product);
   const discount = discountPct(offer);
   const { ids, toggle, hydrated } = useWatchlist();
   const saved = hydrated && ids.includes(product.id);
@@ -89,7 +92,9 @@ export default function ProductCard({
               <span className="text-sm text-ink-300 line-through">${offer.originalPrice}</span>
             )}
           </div>
-          <p className="mt-1 text-xs text-ink-400">Best at {offer.store}</p>
+          <p className="mt-1 text-xs text-ink-400">{prefs?.sizes.length && offer.sizesInStock.some(s => prefs.sizes.includes(s)) ? "Your size at" : "Best at"} {offer.store}</p>
+          <p className="mt-1 text-xs text-ink-400">{offer.shippingCost ? `+$${offer.shippingCost} shipping` : "Free shipping"}</p>
+          {reasons?.length ? <p className="mt-2 text-xs text-brand-600">{reasons.join(" · ")}</p> : null}
         </div>
       </Link>
     </div>

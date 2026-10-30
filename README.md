@@ -169,62 +169,72 @@ database. That's the natural next step now that `User` exists: add
 session. Worth doing before real offer feeds, since "my saved
 deals" is more valuable once it follows the user across devices.
 
-## Phase 5: RL-based recommendations (done)
+## Recommendations (revamped October 2026)
 
-"Best match" now uses a contextual bandit instead of pure hand-tuned
-rules, when you're signed in.
+Best match uses a lightweight online logistic ranker with time-decayed content
+preferences. It runs on the existing Next.js/Postgres stack; no external ML
+service, API key, GPU, or new database migration is required.
 
-**Why a contextual bandit, not deep RL:** a project like this will
-never generate enough interaction data to train a policy network —
-you'd be fitting noise, not signal. A linear contextual bandit
-(logistic regression + online SGD + epsilon-greedy exploration) is
-the real, production-proven approach for this exact problem — it's
-what most retail/streaming ranking systems actually run. It updates
-from a single interaction, needs no GPU or replay buffer, and the
-rule-based score from Phase 1 became its cold-start prior instead of
-being thrown away.
+### Ranking and learning
 
-### How it works
+- `lib/bandit.ts` scores 11 features: favorite/disliked brands, colors, in-stock
+  sizes, discount, continuous budget fit including shipping, learned attribute
+  affinity, similarity to liked items, offer freshness, discount preference,
+  and bias. Existing weights retain their positions; missing features receive
+  default priors. Non-finite weights are repaired and updates are bounded.
+- `lib/ranking.ts` computes stable scores and applies a small brand/category
+  repetition penalty across the first 24 results. Ties resolve by product ID.
+  There is no random jitter inside the sort comparator. Signed-out visitors
+  use the same ranker with default weights and their explicit preferences.
+- `lib/recommendation-offer.ts` selects the cheapest eligible offer including
+  shipping, preferring an offer stocking a selected size. Sold-out, invalid,
+  and review-only offers are excluded from browse results. Product cards,
+  filters, and manual sorts use this same offer selection.
+- Each Best match card explains up to two relevant factors, such as size
+  availability, activity-based similarity, or budget including shipping.
+- Saves have target 1 and full training strength; skips target 0 and full
+  strength. Retailer clicks have target 0.75 and half strength; unsaves target
+  0.5 and quarter strength. Scores express relative ranking preference, not
+  calibrated purchase probabilities. Unclicked items are not negative labels.
+- Training reads preferences from the authenticated account. A serializable
+  transaction writes the event and weights together, retrying conflicts.
+  A repeated identical latest action on a product within 24 hours is ignored;
+  gradient updates are capped at three per product in a rolling 24 hours.
+  Later state changes still reach the preference profile.
+- The client queues feedback in order, rejects stale responses, and resets
+  model state when the signed-in account changes. `/api/interactions` returns
+  the updated profile and weights for reranking after the server responds.
 
-- `lib/bandit.ts` — pure math (no Prisma import, so it runs
-  identically server- and client-side): turns a product + your
-  preferences into a 7-feature vector, scores it with a linear
-  model, and does one online gradient step per interaction.
-- Signals that train it: **Save** (+1), **Not interested** (0, the
-  only explicit negative signal), **Unsave** (0.25, a soft walk-back
-  rather than a hard penalty), **clicking through to an actual
-  store** (+1, arguably the strongest real signal there is).
-- `prisma/schema.prisma` — new `Interaction` (full event log) and
-  `BanditWeights` (current learned weights per user) tables.
-- `/api/interactions` (POST) logs the event and updates weights;
-  `/api/bandit-weights` (GET) serves the current weights so the
-  client can re-rank instantly without waiting on a request.
-- Signed-out visitors never train or use the bandit — they get the
-  exact same deterministic rule-based sort as before Phase 5.
+### Preference memory
 
-### Setup
+The last 300 events are reduced to one current observation per product.
+Repeated clicks and save toggles therefore cannot inflate the attribute model's
+confidence. Explicit saves/skips/unsaves take precedence over subsequent casual
+clicks in this history. A skip hides that product from browsing until superseded
+by a save or until it leaves the bounded history. An unsave removes its positive
+similarity contribution without implying a strong dislike.
 
-After the Phase 4 migration, run one more:
-`npx prisma migrate dev --name add_bandit`
+Both attribute evidence and item similarity use a 30-day half-life. Attribute
+families receive equal weight so products with many listed colors do not drown
+out brand/category/price evidence. Learned preferences remain visible and
+confirmable on the Preferences page.
 
-### Honest limitations
+### Validation and limitations
 
-- **Cold start is real.** A brand-new account's first several
-  recommendations lean heavily on the informed prior in
-  `DEFAULT_WEIGHTS`, not on anything learned. That's intentional —
-  it's better than random — but don't expect it to feel personalized
-  until you've saved/skipped a handful of items.
-- **No offline evaluation yet.** There's no A/B test or held-out
-  metric proving the bandit beats the old rule-based score — right
-  now it's "this is the standard right-sized approach," not "this is
-  measured to work better." Adding that would mean logging which
-  arm (bandit vs. rules) served each session and comparing
-  save-through rate.
-- **Per-product exploration jitter is visible, not just internal.**
-  `explorationScore()` adds randomness directly to the sort order, so
-  don't be surprised if "Best match" isn't perfectly stable across
-  reloads early on — that's the exploration side of
-  explore/exploit working as intended, not a bug.
+`npm test` covers stable ordering, held-out related-item ranking, diversity,
+feedback reversals, duplicate evidence, shipping/stock handling, numeric
+stability, API validation and transaction retries. CI also runs
+`scripts/test-recommendations.ts` against disposable Postgres to verify
+concurrent duplicate suppression and distinct feedback updates, plus the full
+typecheck and production build.
+
+These are behavioral regression checks with synthetic fixtures, not evidence
+of higher real-world conversion. Production evaluation still needs impression
+logging and a consent-appropriate experiment or temporal held-out dataset.
+There is no cross-user collaborative filtering or purchase tracking. Historical
+product features are reconstructed from the current catalog; the profile is
+bounded to 300 events, and prior online weights are retained. Diversity is a
+small deterministic serving rule, not a learned exploration policy.
 
 ## Phase 6: Watchlist + preferences on real accounts (done)
 
@@ -318,12 +328,12 @@ actually do, not just what they typed in.
 - **Per-attribute affinities (Beta-Bernoulli).** Each token keeps a
   time-decayed tally of positive vs. negative reward from the
   `Interaction` log. The posterior mean with a Beta(1, 1) prior means
-  one save barely moves an affinity and ten move it a lot. Activity
+  one saved product barely moves an affinity and ten distinct products move it a lot. Activity
   has a 30-day half-life, so tastes can change over time.
 - **Item-to-item similarity (content-based kNN).** The highest cosine
   similarity between a product and the items the user liked. This
   picks up combinations ("black Nike hoodies") that separate
-  per-token affinities miss. A later "Not interested" removes an item
+  per-token affinities miss. Similarity is decay-weighted. A later "Not interested" or unsave removes an item
   from the liked set.
 - Both are two new bandit features, `learnedAffinity` and
   `similarToLiked`. Existing users' stored weights are padded with
@@ -344,7 +354,7 @@ No migration needed. It reads the existing `interactions` table.
   users (no collaborative filtering). That's the right call at this
   traffic level, but "people who saved X also saved Y" would need
   real cross-user volume.
-- Still no offline evaluation — see item 3 below.
+- Behavioral regression tests exist; production ranking quality still needs measured evaluation.
 
 ## Next up (Phase 9+, per your original roadmap)
 

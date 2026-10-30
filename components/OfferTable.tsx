@@ -8,8 +8,7 @@ export default function OfferTable({ product, offers }: { product: Product; offe
   const { prefs } = usePreferences();
   const bandit = useBandit();
 
-  // Click-through to an actual store is the strongest available
-  // signal that the recommendation worked — fire-and-forget so it
+  // Click-through indicates interest (weaker than a save). It
   // never delays the navigation itself.
   function handleClickOut() {
     bandit.recordInteraction(product.id, "CLICK_OUT", prefs);
