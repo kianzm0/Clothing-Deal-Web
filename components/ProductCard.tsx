@@ -9,20 +9,29 @@ import { CATEGORY_GLYPH } from "@/lib/category";
 
 type InteractionAction = "SAVE" | "UNSAVE" | "SKIP" | "CLICK_OUT";
 
-export default function ProductCard({
-  product,
-  onInteract,
-  prefs,
-  reasons,
-}: {
+type WatchlistState = ReturnType<typeof useWatchlist>;
+type ProductCardProps = {
   product: Product;
   onInteract?: (productId: string, action: InteractionAction, prefs: Preferences) => void;
   prefs?: Preferences;
   reasons?: string[];
-}) {
+};
+
+export default function ProductCard(props: ProductCardProps & { watchlist?: WatchlistState }) {
+  return props.watchlist
+    ? <ProductCardContent {...props} watchlist={props.watchlist} />
+    : <ConnectedProductCard {...props} />;
+}
+
+function ConnectedProductCard(props: ProductCardProps) {
+  const watchlist = useWatchlist();
+  return <ProductCardContent {...props} watchlist={watchlist} />;
+}
+
+function ProductCardContent({ product, onInteract, prefs, reasons, watchlist }: ProductCardProps & { watchlist: WatchlistState }) {
   const offer = (prefs ? recommendationOffer(product, prefs) : undefined) ?? bestOffer(product);
   const discount = discountPct(offer);
-  const { ids, toggle, hydrated } = useWatchlist();
+  const { ids, toggle, hydrated } = watchlist;
   const saved = hydrated && ids.includes(product.id);
   const [skipped, setSkipped] = useState(false);
 
