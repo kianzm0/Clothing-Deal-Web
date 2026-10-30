@@ -55,7 +55,7 @@ export default function FilterBar({
       </select>
 
       <label className="flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-600 shadow-sm">
-        Max
+        Max incl. shipping
         <input
           type="number"
           className="w-16 bg-transparent text-ink-900 outline-none"
@@ -81,7 +81,7 @@ export default function FilterBar({
         onChange={(e) => onChange({ ...filters, sort: e.target.value as SortOption })}
       >
         <option value="best-match">Best match</option>
-        <option value="lowest-price">Lowest price</option>
+        <option value="lowest-price">Lowest total price</option>
         <option value="biggest-discount">Biggest discount</option>
         <option value="freshest">Freshest update</option>
       </select>

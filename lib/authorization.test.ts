@@ -233,6 +233,8 @@ test("customers retain watchlists, preferences, and personalized learning", asyn
   const prefs = stub(prisma.preference, "upsert", async () => ({}));
   stub(prisma.banditWeights, "findUnique", async () => null);
   const learn = stub(prisma.banditWeights, "upsert", async () => ({}));
+  stub(prisma, "$transaction", async (fn) => fn(prisma));
+  stub(prisma.interaction, "findFirst", async () => null);
   stub(prisma.interaction, "count", async () => 1);
   stub(prisma.interaction, "findMany", async () => []);
   const interaction = stub(prisma.interaction, "create", async () => ({}));

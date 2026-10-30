@@ -1,120 +1,68 @@
 import { Preferences, Product } from "./types";
-import { bestOffer, discountPct } from "./pricing";
+import { discountPct } from "./pricing";
 import { PreferenceProfile, learnedAffinity, similarityToLiked } from "./preference-model";
+import { recommendationOffer, totalPrice } from "./recommendation-offer";
 
-// Contextual bandit for "Best match" ranking.
-//
-// Why a bandit and not "real" deep RL: a solo project's traffic
-// never generates enough (state, action, long-horizon reward) tuples
-// to train a policy network — you'd be fitting noise. A linear
-// contextual bandit is the standard, production-proven approach for
-// this exact problem (it's what most e-commerce/streaming ranking
-// systems actually run): it updates online from a single interaction,
-// needs no replay buffer or GPU, and degrades gracefully to sane
-// behavior with only a few data points.
-//
-// Model: logistic regression over a small feature vector, trained
-// online via one SGD step per interaction (contextual bandit reward
-// signal), with epsilon-greedy exploration layered on top at
-// serving time. This file is pure math — no Prisma import — so the
-// exact same scoring function runs server-side (for the API route)
-// and client-side (for instant re-ranking after an interaction,
-// without waiting on a round trip).
-
+// Online logistic ranker. Scores are relative preferences, not calibrated
+// purchase probabilities: we only observe voluntary feedback, not impressions.
+// Keep existing feature positions so persisted weights remain compatible.
 export const FEATURE_NAMES = [
-  "bias",
-  "favoriteBrand",
-  "dislikedBrand",
-  "colorMatch",
-  "sizeMatch",
-  "discountFrac",
-  "priceFit",
-  // Implicit signals learned from the user's own interaction history
-  // (lib/preference-model.ts) rather than the explicit preferences form.
-  "learnedAffinity",
-  "similarToLiked",
+  "bias", "favoriteBrand", "dislikedBrand", "colorMatch", "sizeMatch",
+  "discountFrac", "priceFit", "learnedAffinity", "similarToLiked",
+  "freshness", "discountFit",
 ] as const;
-
 export type FeatureVector = number[];
+export type InteractionAction = "SAVE" | "UNSAVE" | "SKIP" | "CLICK_OUT";
+export const DEFAULT_WEIGHTS = [0, 1.2, -2, 0.6, 0.6, 1, 0.8, 1.5, 1, 0.35, 0.4];
+const clamp = (n: number, low: number, high: number) => Math.max(low, Math.min(high, n));
 
-// Informed prior, not a blank slate: cold start (a brand-new user
-// with zero interactions) should still roughly track the old
-// rule-based scoring, not rank randomly until enough data arrives.
-export const DEFAULT_WEIGHTS: number[] = [0, 1.2, -2.0, 0.6, 0.6, 1.0, 0.8, 1.5, 1.0];
-
-// Weights saved before a feature was added are shorter than
-// DEFAULT_WEIGHTS. Pad them with the prior for the new features so
-// existing users keep what they've learned instead of being reset.
 export function alignWeights(weights: number[]): number[] {
-  if (weights.length >= DEFAULT_WEIGHTS.length) return weights.slice(0, DEFAULT_WEIGHTS.length);
-  return [...weights, ...DEFAULT_WEIGHTS.slice(weights.length)];
+  return DEFAULT_WEIGHTS.map((prior, i) => Number.isFinite(weights[i]) ? clamp(weights[i], -6, 6) : prior);
 }
 
-export function featurize(product: Product, prefs: Preferences, profile?: PreferenceProfile): FeatureVector {
-  const offer = bestOffer(product);
-  const discount = discountPct(offer) / 100;
-  const priceFit = offer.price <= prefs.maxBudget ? 1 : -1;
-
+export function featurize(product: Product, prefs: Preferences, profile?: PreferenceProfile, now = Date.now()): FeatureVector {
+  const offer = recommendationOffer(product, prefs);
+  const discount = offer ? clamp(discountPct(offer) / 100, 0, 1) : 0;
+  const cost = offer ? totalPrice(offer) : Infinity;
+  const budget = Math.max(1, prefs.maxBudget);
+  const age = offer ? Math.max(0, (now - Date.parse(offer.lastUpdated)) / 86400000) : Infinity;
+  const has = (values: string[], value: string) => values.some(v => v.trim().toLowerCase() === value.trim().toLowerCase());
   return [
-    1, // bias
-    prefs.favoriteBrands.includes(product.brand) ? 1 : 0,
-    prefs.dislikedBrands.includes(product.brand) ? 1 : 0,
-    product.colors.some((c) => prefs.colors.includes(c)) ? 1 : 0,
-    product.sizes.some((s) => prefs.sizes.includes(s)) ? 1 : 0,
+    1,
+    has(prefs.favoriteBrands, product.brand) ? 1 : 0,
+    has(prefs.dislikedBrands, product.brand) ? 1 : 0,
+    product.colors.some(c => has(prefs.colors, c)) ? 1 : 0,
+    prefs.sizes.length ? (offer?.sizesInStock.some(s => has(prefs.sizes, s)) ? 1 : -1) : 0,
     discount,
-    priceFit,
+    clamp((budget - cost) / budget, -1, 1),
     profile ? learnedAffinity(product, profile) : 0,
     profile ? similarityToLiked(product, profile) : 0,
+    Number.isFinite(age) ? Math.pow(0.5, age / 7) : 0,
+    prefs.minDiscountPct > 0 ? (discount * 100 >= prefs.minDiscountPct ? 1 : -1) : 0,
   ];
 }
 
-function sigmoid(z: number): number {
-  return 1 / (1 + Math.exp(-z));
-}
-
-function dot(a: number[], b: number[]): number {
-  return a.reduce((sum, v, i) => sum + v * b[i], 0);
-}
-
-// Predicted probability the user would engage positively with this
-// product, given the current learned weights.
 export function predict(weights: number[], features: FeatureVector): number {
-  return sigmoid(dot(weights, features));
+  const z = alignWeights(weights).reduce((sum, w, i) => sum + w * (Number.isFinite(features[i]) ? features[i] : 0), 0);
+  return 1 / (1 + Math.exp(-clamp(z, -30, 30)));
 }
 
-const LEARNING_RATE = 0.15;
-const L2_REGULARIZATION = 0.01;
-
-// One online gradient step of logistic regression. `reward` is
-// clamped to [0, 1] — SAVE/CLICK_OUT are positive examples, SKIP is
-// a negative example, UNSAVE nudges back toward neutral. This is
-// the entire "learning" step: no batching, no epochs, applied the
-// moment an interaction happens.
-export function updateWeights(weights: number[], features: FeatureVector, reward: number): number[] {
-  const target = Math.max(0, Math.min(1, reward));
-  const predicted = predict(weights, features);
-  const error = target - predicted;
-
-  return weights.map((w, i) => w + LEARNING_RATE * error * features[i] - LEARNING_RATE * L2_REGULARIZATION * w);
+export function updateWeights(weights: number[], features: FeatureVector, reward: number, strength = 1): number[] {
+  const aligned = alignWeights(weights);
+  if (!Number.isFinite(reward) || !Number.isFinite(strength)) return aligned;
+  const error = clamp(reward, 0, 1) - predict(aligned, features);
+  const rate = 0.12 * clamp(strength, 0, 1);
+  return aligned.map((w, i) => clamp(
+    w + rate * (error * (Number.isFinite(features[i]) ? clamp(features[i], -1, 1) : 0)
+      - 0.03 * (w - DEFAULT_WEIGHTS[i])), -6, 6
+  ));
 }
 
-// Epsilon-greedy exploration: with probability epsilon, jitter the
-// score enough to occasionally surface a product the model is
-// unsure about, instead of always exploiting the current best
-// guess. Epsilon decays as the user accumulates interactions, so a
-// brand-new account explores more and a well-trained one mostly
-// exploits.
-export function explorationScore(baseScore: number, interactionCount: number): number {
-  const epsilon = Math.max(0.05, 0.3 - interactionCount * 0.01);
-  if (Math.random() < epsilon) {
-    return baseScore + (Math.random() - 0.5) * 0.6;
-  }
-  return baseScore;
-}
-
-export const REWARD_BY_ACTION: Record<"SAVE" | "UNSAVE" | "SKIP" | "CLICK_OUT", number> = {
-  SAVE: 1,
-  UNSAVE: 0.25,
-  SKIP: 0,
-  CLICK_OUT: 1,
+// A click indicates curiosity, not a purchase. Removing a saved item is
+// ambiguous, whereas "not interested" is an explicit negative label.
+export const REWARD_BY_ACTION: Record<InteractionAction, number> = {
+  SAVE: 1, UNSAVE: 0.5, SKIP: 0, CLICK_OUT: 0.75,
+};
+export const STRENGTH_BY_ACTION: Record<InteractionAction, number> = {
+  SAVE: 1, UNSAVE: 0.25, SKIP: 1, CLICK_OUT: 0.5,
 };

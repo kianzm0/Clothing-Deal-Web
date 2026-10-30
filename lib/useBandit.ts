@@ -1,66 +1,61 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { DEFAULT_WEIGHTS, explorationScore, featurize, predict } from "./bandit";
+import { DEFAULT_WEIGHTS, alignWeights, InteractionAction } from "./bandit";
 import { EMPTY_PROFILE, PreferenceProfile } from "./preference-model";
-import { Preferences, Product } from "./types";
+import { Preferences } from "./types";
 
 export function useBandit() {
-  const { status } = useSession();
-  const [weights, setWeights] = useState<number[]>(DEFAULT_WEIGHTS);
-  const [interactionCount, setInteractionCount] = useState(0);
-  const [profile, setProfile] = useState<PreferenceProfile>(EMPTY_PROFILE);
-  const [signedIn, setSignedIn] = useState(false);
+  const { data: session, status } = useSession();
+  const userId = status === "authenticated" ? session?.user?.id : undefined;
+  const generation = useRef(0);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const [state, setState] = useState({ userId: undefined as string | undefined,
+    weights: DEFAULT_WEIGHTS, profile: EMPTY_PROFILE, interactionCount: 0 });
 
   useEffect(() => {
-    if (status !== "authenticated") return;
-    fetch("/api/bandit-weights")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.signedIn) {
-          setWeights(data.weights);
-          setInteractionCount(data.interactionCount);
-          setProfile(data.profile ?? EMPTY_PROFILE);
-          setSignedIn(true);
+    const current = ++generation.current;
+    setState({ userId: undefined, weights: DEFAULT_WEIGHTS, profile: EMPTY_PROFILE, interactionCount: 0 });
+    if (!userId) return;
+    const controller = new AbortController();
+    fetch("/api/bandit-weights", { signal: controller.signal, cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.signedIn && generation.current === current) {
+          setState({ userId, weights: alignWeights(data.weights), profile: data.profile ?? EMPTY_PROFILE,
+            interactionCount: data.interactionCount });
         }
-      })
-      .catch(() => {});
-  }, [status]);
+      }).catch(() => {});
+    return () => { controller.abort(); generation.current++; };
+  }, [userId]);
 
-  // Signed-in users get the learned model (with exploration layered
-  // on); everyone else gets the deterministic rule-based prior via
-  // the caller's fallback — see BrowseClient.
-  const scoreProduct = useCallback(
-    (product: Product, prefs: Preferences): number => {
-      const features = featurize(product, prefs, profile);
-      const base = predict(weights, features);
-      return explorationScore(base, interactionCount);
-    },
-    [weights, interactionCount, profile]
-  );
-
+  const signedIn = !!userId && state.userId === userId;
   const recordInteraction = useCallback(
-    async (productId: string, action: "SAVE" | "UNSAVE" | "SKIP" | "CLICK_OUT", prefs: Preferences) => {
-      if (!signedIn) return; // nothing to train against for anonymous browsing
-      try {
-        const res = await fetch("/api/interactions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productId, action, prefs }),
-        });
-        const data = await res.json();
-        if (data.trained) {
-          setWeights(data.weights);
-          setInteractionCount(data.interactionCount);
-          if (data.profile) setProfile(data.profile);
-        }
-      } catch {
-        // Best-effort: a dropped interaction just means one less
-        // training example, not a broken UI.
-      }
-    },
-    [signedIn]
+    (productId: string, action: InteractionAction, _prefs: Preferences) => {
+      if (!signedIn) return;
+      const current = generation.current;
+      // Preserve the user's action order and reject responses for a former
+      // account. Server transactions also protect concurrent tabs/devices.
+      queue.current = queue.current.catch(() => {}).then(async () => {
+        if (generation.current !== current) return;
+        try {
+          const res = await fetch("/api/interactions", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productId, action }), keepalive: true,
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.trained && generation.current === current) {
+            setState(prev => data.interactionCount < prev.interactionCount ? prev : {
+              userId, weights: alignWeights(data.weights), interactionCount: data.interactionCount,
+              profile: (data.profile ?? EMPTY_PROFILE) as PreferenceProfile,
+            });
+          }
+        } catch { /* Feedback failure must not break browsing. */ }
+      });
+    }, [signedIn, userId]
   );
 
-  return { signedIn, profile, scoreProduct, recordInteraction };
+  return { signedIn, weights: signedIn ? state.weights : DEFAULT_WEIGHTS,
+    profile: signedIn ? state.profile : EMPTY_PROFILE, recordInteraction };
 }

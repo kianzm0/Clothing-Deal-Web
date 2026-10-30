@@ -1,8 +1,9 @@
 "use client";
 import { useMemo, useState } from "react";
 import { Product } from "@/lib/types";
-import { bestOffer, discountPct, daysSinceUpdate } from "@/lib/pricing";
-import { scoreProduct as ruleBasedScore } from "@/lib/recommend";
+import { discountPct, daysSinceUpdate } from "@/lib/pricing";
+import { rankProducts } from "@/lib/ranking";
+import { recommendationOffer, totalPrice } from "@/lib/recommendation-offer";
 import { usePreferences } from "@/lib/store";
 import { useBandit } from "@/lib/useBandit";
 import FilterBar, { DEFAULT_FILTERS, Filters } from "./FilterBar";
@@ -20,34 +21,31 @@ export default function BrowseClient({ products }: { products: Product[] }) {
 
   const results = useMemo(() => {
     let list = products.filter((p) => {
-      const offer = bestOffer(p);
+      if (bandit.profile.dismissed?.includes(p.id)) return false;
+      const offer = recommendationOffer(p, prefs);
+      if (!offer) return false;
       if (filters.category !== "all" && p.category !== filters.category) return false;
       if (filters.brand !== "all" && p.brand !== filters.brand) return false;
-      if (offer.price > filters.maxPrice) return false;
+      if (totalPrice(offer) > filters.maxPrice) return false;
       if (discountPct(offer) < filters.minDiscount) return false;
       return true;
     });
 
     switch (filters.sort) {
       case "lowest-price":
-        list = [...list].sort((a, b) => bestOffer(a).price - bestOffer(b).price);
+        list = [...list].sort((a, b) => totalPrice(recommendationOffer(a, prefs)!) - totalPrice(recommendationOffer(b, prefs)!));
         break;
       case "biggest-discount":
-        list = [...list].sort((a, b) => discountPct(bestOffer(b)) - discountPct(bestOffer(a)));
+        list = [...list].sort((a, b) => discountPct(recommendationOffer(b, prefs)!) - discountPct(recommendationOffer(a, prefs)!));
         break;
       case "freshest":
-        list = [...list].sort((a, b) => daysSinceUpdate(bestOffer(a)) - daysSinceUpdate(bestOffer(b)));
+        list = [...list].sort((a, b) => daysSinceUpdate(recommendationOffer(a, prefs)!) - daysSinceUpdate(recommendationOffer(b, prefs)!));
         break;
       default:
-        // Best match: the learned bandit model when signed in (it
-        // already incorporates preferences via the same feature
-        // vector), the deterministic rule-based score otherwise.
-        list = bandit.signedIn
-          ? [...list].sort((a, b) => bandit.scoreProduct(b, prefs) - bandit.scoreProduct(a, prefs))
-          : [...list].sort((a, b) => ruleBasedScore(b, prefs) - ruleBasedScore(a, prefs));
+        return rankProducts(list, prefs, bandit.weights, bandit.profile);
     }
-    return list;
-  }, [products, filters, prefs, bandit]);
+    return list.map(product => ({ product, reasons: [] as string[] }));
+  }, [products, filters, prefs, bandit.weights, bandit.profile]);
 
   return (
     <div>
@@ -69,9 +67,14 @@ export default function BrowseClient({ products }: { products: Product[] }) {
         )}
       </p>
 
+      {results.length === 0 && (
+        <p className="rounded-2xl border border-ink-100 bg-white p-6 text-sm text-ink-500">
+          No deals match right now. Try widening your filters or checking back for new offers.
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {results.map((p) => (
-          <ProductCard key={p.id} product={p} onInteract={bandit.recordInteraction} prefs={prefs} />
+        {results.map(({ product: p, reasons }) => (
+          <ProductCard key={p.id} product={p} onInteract={bandit.recordInteraction} prefs={prefs} reasons={reasons} />
         ))}
       </div>
     </div>

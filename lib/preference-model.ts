@@ -1,35 +1,9 @@
 import { Preferences, Product } from "./types";
 import { bestOffer } from "./pricing";
 
-// Implicit preference model — learns what a user likes from what
-// they actually do (save / skip / click out), not just from what
-// they typed into the preferences form.
-//
-// The bandit in lib/bandit.ts can only weigh the features it's
-// given, and before this file every one of those features came from
-// the explicit preferences form. So someone who never lists Nike as
-// a favorite but saves every Nike hoodie they see would never get
-// more Nike hoodies — the model had no feature that could notice.
-// This file closes that gap with two small, data-efficient learners:
-//
-// 1. Per-attribute Beta-Bernoulli affinities. Every product is
-//    broken into tokens (brand, category, color, price band), and
-//    each token keeps a time-decayed count of positive vs. negative
-//    reward. The posterior mean with a Beta(1, 1) prior is a
-//    naturally shrunk estimate: one save moves "brand:Nike" a little,
-//    ten saves move it a lot, and old activity fades out with a
-//    30-day half-life so tastes can change.
-// 2. Item-to-item similarity (content-based kNN). The highest cosine
-//    similarity between a product and the items the user engaged
-//    with positively. Unlike the per-token affinities this captures
-//    combinations — "black Nike hoodies", not just "Nike" and
-//    "black" and "hoodies" separately.
-//
-// Both become extra features for the bandit, and the affinities also
-// power "suggested preferences" on the preferences page, so the user
-// can see (and confirm) what was learned. Like lib/bandit.ts this
-// file is pure — no Prisma import — so it runs server- and
-// client-side identically.
+// Time-decayed content preferences with one current vote per product.
+// Repeat clicks and save/unsave toggles cannot create unlimited evidence.
+// Pure functions shared by serving, training, and preference insights.
 
 export interface TokenStats {
   pos: number; // decayed sum of reward
@@ -47,12 +21,14 @@ export interface PreferenceProfile {
   tokens: Record<string, TokenStats>;
   liked: LikedItem[];
   observations: number;
+  dismissed?: string[];
 }
 
 export interface Observation {
   product: Product;
   reward: number; // 0..1, see REWARD_BY_ACTION in lib/bandit.ts
   at: Date | string;
+  action?: "SAVE" | "UNSAVE" | "SKIP" | "CLICK_OUT";
 }
 
 export const EMPTY_PROFILE: PreferenceProfile = { tokens: {}, liked: [], observations: 0 };
@@ -79,7 +55,7 @@ export function productTokens(product: Product): string[] {
   return [
     `brand:${product.brand}`,
     `category:${product.category}`,
-    ...product.colors.map((c) => `color:${c}`),
+    ...Array.from(new Set(product.colors)).map((c) => `color:${c}`),
     `price:${priceBand(price)}`,
   ];
 }
@@ -93,29 +69,34 @@ export function buildProfile(observations: Observation[], now: Date = new Date()
   const tokens: Record<string, TokenStats> = {};
   const likedById = new Map<string, LikedItem>();
 
-  for (const obs of observations) {
+  // Sort a copy so callers need not know the database's retrieval order.
+  const latest = new Map<string, Observation>();
+  for (const obs of [...observations].filter(o => Number.isFinite(o.reward) && Number.isFinite(new Date(o.at).getTime()))
+    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())) {
+    if (!obs.product.offers.length) continue;
+    const previous = latest.get(obs.product.id);
+    // Casual clicks do not undo an explicit save or dismissal.
+    if (obs.action === "CLICK_OUT" && previous?.action && previous.action !== "CLICK_OUT") continue;
+    latest.set(obs.product.id, obs);
+  }
+  const dismissed: string[] = [];
+  for (const obs of latest.values()) {
     const reward = Math.max(0, Math.min(1, obs.reward));
-    const w = decayWeight(obs.at, now);
+    const w = decayWeight(obs.at, now) * (obs.action === "CLICK_OUT" ? 0.5 : obs.action === "UNSAVE" ? 0.25 : 1);
     const productTokenList = productTokens(obs.product);
-
     for (const token of productTokenList) {
       const stats = (tokens[token] ??= { pos: 0, neg: 0 });
       stats.pos += w * reward;
       stats.neg += w * (1 - reward);
     }
-
-    if (reward >= LIKED_REWARD_THRESHOLD) {
-      const existing = likedById.get(obs.product.id);
+    if (obs.action === "SKIP" || (!obs.action && reward === 0)) dismissed.push(obs.product.id);
+    if (reward >= LIKED_REWARD_THRESHOLD && obs.action !== "UNSAVE") {
       likedById.set(obs.product.id, {
         productId: obs.product.id,
         tokens: productTokenList,
         price: bestOffer(obs.product).price,
-        weight: (existing?.weight ?? 0) + w * reward,
+        weight: w * reward,
       });
-    } else if (reward === 0) {
-      // An explicit "not interested" retracts the item from the
-      // liked set, so kNN similarity stops pulling toward it.
-      likedById.delete(obs.product.id);
     }
   }
 
@@ -123,7 +104,7 @@ export function buildProfile(observations: Observation[], now: Date = new Date()
     .sort((a, b) => b.weight - a.weight)
     .slice(0, MAX_LIKED_ITEMS);
 
-  return { tokens, liked, observations: observations.length };
+  return { tokens, liked, observations: latest.size, dismissed };
 }
 
 // Posterior mean of a Beta(1 + pos, 1 + neg). 0.5 = no opinion.
@@ -137,8 +118,13 @@ export function tokenAffinity(stats: TokenStats | undefined): number {
 // a token seen once barely moves off 0.
 export function learnedAffinity(product: Product, profile: PreferenceProfile): number {
   const tokens = productTokens(product);
-  const sum = tokens.reduce((acc, t) => acc + (tokenAffinity(profile.tokens[t]) - 0.5) * 2, 0);
-  return sum / tokens.length;
+  // Each attribute family gets equal influence; ten listed colors should
+  // not outweigh brand, category, and price combined.
+  const groups = ["brand:", "category:", "color:", "price:"];
+  return groups.reduce((sum, prefix) => {
+    const group = tokens.filter(t => t.startsWith(prefix));
+    return sum + (group.length ? group.reduce((s, t) => s + (tokenAffinity(profile.tokens[t]) - 0.5) * 2, 0) / group.length : 0);
+  }, 0) / groups.length;
 }
 
 function cosine(a: string[], b: string[]): number {
@@ -156,7 +142,7 @@ export function similarityToLiked(product: Product, profile: PreferenceProfile):
   let best = 0;
   for (const item of profile.liked) {
     if (item.productId === product.id) continue;
-    best = Math.max(best, cosine(tokens, item.tokens));
+    best = Math.max(best, cosine(tokens, item.tokens) * Math.min(1, item.weight));
   }
   return best;
 }

@@ -60,6 +60,10 @@ jobs:
         run: npx prisma migrate deploy
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/threadscout_test?schema=fresh
+      - name: Verify recommendation transactions under concurrent feedback
+        run: npx tsx scripts/test-recommendations.ts
+        env:
+          RECOMMENDATION_TEST_DATABASE: "1"
       - name: Run authorization and existing tests
         id: tests
         run: npm test 2>&1 | tee /tmp/threadscout-tests.log
