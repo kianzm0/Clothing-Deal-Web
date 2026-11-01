@@ -8,6 +8,7 @@ import { usePreferences } from "@/lib/store";
 import { useBandit } from "@/lib/useBandit";
 import FilterBar, { DEFAULT_FILTERS, Filters } from "./FilterBar";
 import ProductCard from "./ProductCard";
+import RecommendationEvaluation from "./RecommendationEvaluation";
 
 export default function BrowseClient({ products }: { products: Product[] }) {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -72,11 +73,17 @@ export default function BrowseClient({ products }: { products: Product[] }) {
           No deals match right now. Try widening your filters or checking back for new offers.
         </p>
       )}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      <RecommendationEvaluation
+        viewKey={JSON.stringify(filters)}
+        items={results.map(({ product }) => ({ productId: product.id, displayedTotal: totalPrice(recommendationOffer(product, prefs)!) }))}
+        context={{ sort: filters.sort, personalized: bandit.signedIn,
+          filtered: filters.category !== "all" || filters.brand !== "all" || filters.maxPrice !== DEFAULT_FILTERS.maxPrice || filters.minDiscount !== DEFAULT_FILTERS.minDiscount }}
+      >
         {results.map(({ product: p, reasons }) => (
           <ProductCard key={p.id} product={p} onInteract={bandit.recordInteraction} prefs={prefs} reasons={reasons} />
         ))}
-      </div>
+      </RecommendationEvaluation>
     </div>
   );
 }
+

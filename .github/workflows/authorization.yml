@@ -64,6 +64,10 @@ jobs:
         run: npx tsx scripts/test-recommendations.ts
         env:
           RECOMMENDATION_TEST_DATABASE: "1"
+      - name: Verify evaluation consent, deduplication and retention under concurrency
+        run: npx tsx scripts/test-evaluation.ts
+        env:
+          EVALUATION_TEST_DATABASE: "1"
       - name: Run authorization and existing tests
         id: tests
         run: npm test 2>&1 | tee /tmp/threadscout-tests.log
@@ -88,3 +92,4 @@ jobs:
               output: { title: passed ? 'Tests and types passed' : 'Validation failed', summary: 'Route, permission, and customer-feature regression results.', text: '```text\n' + text + '\n```' }
             });
       - run: npm run build
+

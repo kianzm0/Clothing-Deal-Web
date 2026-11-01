@@ -229,8 +229,9 @@ concurrent duplicate suppression and distinct feedback updates, plus the full
 typecheck and production build.
 
 These are behavioral regression checks with synthetic fixtures, not evidence
-of higher real-world conversion. Production evaluation still needs impression
-logging and a consent-appropriate experiment or temporal held-out dataset.
+of higher real-world conversion. Opt-in impression instrumentation is now available
+(see Recommendation evaluation below); production evaluation still needs actual
+consented data and a valid experiment or temporal held-out dataset.
 There is no cross-user collaborative filtering or purchase tracking. Historical
 product features are reconstructed from the current catalog; the profile is
 bounded to 300 events, and prior online weights are retained. Diversity is a
@@ -365,3 +366,111 @@ No migration needed. It reads the existing `interactions` table.
    move stale/missing/out-of-stock offers to `needs_review` or a new
    `expired` status
 3. Offline evaluation for the bandit (compare save-through rate vs. the old rule-based sort)
+
+
+### Recommendation evaluation (opt-in instrumentation)
+
+This adds measurement, **not evidence of improved conversion**. The ranking policy,
+feedback rewards, training history and recommendation order are unchanged. Impressions
+never become implicit negative training examples. Evaluation events are separate from
+`interactions`, whose existing deduplication is for training rather than measurement.
+
+**Consent and privacy.** Signed-in users can opt in using the Browse checkbox; all
+accounts default off. Guests produce no evaluation events. Turning off the checkbox
+(or using “Turn off and delete evaluation history”) deletes that account's impressions
+and outcomes. Account deletion cascades too. The API checks consent on every write;
+a row lock serializes writes with withdrawal across tabs. Existing preference-learning
+history is unaffected. No IPs, user agents, referrers, retailer URLs, raw filter values,
+sizes, preference vectors or experiment fingerprints are stored by this instrumentation.
+Events do contain the existing account ID (pseudonymous, **not anonymous**), product ID,
+random view/event IDs, one-based position, result count, sort, a filtered flag,
+personalization-ready flag, displayed total price, server-assigned ranking version and
+server receipt time. Infrastructure access logs are outside this application's controls
+and require a separate retention/privacy review.
+
+**Impression definition.** On Browse only, at least 50% of the actual product card must
+intersect the viewport for one uninterrupted second while the document is visible.
+Scrolling out, hiding the tab, changing the result set or unmounting cancels dwell.
+A DOM render alone, a below-fold card, or a hidden placeholder is not an impression.
+This is a viewport visibility proxy; it cannot establish eye attention or detect every
+occluding overlay. Unsupported IntersectionObserver browsers contribute no impressions.
+Ordinary rerenders, effect replay, and scrolling away/back reuse event IDs. A change in
+ordered results, displayed prices, filters, sort, personalization readiness, consent or
+account starts a new view. Reloading/remounting Browse also starts a new view. Each
+product is counted at most once per view, protected by database uniqueness as well as
+client deduplication. Bounded network retries reuse the same event ID. Authenticated
+accounts are limited to 1,000 new impressions/hour; unknown products, invalid/big
+payloads, cross-origin requests and conflicting reused IDs are rejected. The browser's
+rank/context claims are not cryptographically attested; this is not fraud-proof telemetry.
+
+**Attribution.** The last successfully acknowledged exposure per product in the current
+tab is remembered in sessionStorage (up to 100 products; 30-minute TTL; account scoped).
+Saves, unsaves, skips and retailer clicks sent through `useBandit` also send an independent
+evaluation outcome, without waiting or changing navigation/training. This covers Browse
+feedback and OfferTable's product-detail retailer links. The server requires the same
+account and product and a receipt time within 30 minutes of the impression. Each action
+type counts at most once per impression. Direct product visits without a remembered
+exposure, guests, expired/cross-account tokens, and events without consent are excluded.
+No attribution token enters the URL or is sent to a retailer. Clicking before the
+impression is acknowledged, blocked sessionStorage, a new tab, dropped requests, or a
+page close can lose attribution. Outcomes are UI action intents, not proof of a persisted
+watchlist change, successful retailer navigation, or purchase. A save followed by unsave
+still contributes to gross save rate; unsave rate is reported separately.
+
+**Available metrics.** Run the operator-only script with database credentials:
+
+```sh
+npx tsx scripts/evaluation-report.ts
+# Optional UTC [from,to) cohort, entirely within retained history and ending >=30m ago:
+npx tsx scripts/evaluation-report.ts 2026-11-01T00:00:00Z 2026-11-02T00:00:00Z
+```
+
+The default is a seven-day cohort ending 30 minutes ago. Output contains aggregate
+counts and rates segmented by ranking version, sort, one-based position, filtered flag
+and personalization readiness. It does not export account IDs. There is no public
+analytics API. Small aggregate groups can still reveal behavior; restrict script/database
+access and apply a minimum group size before sharing results externally.
+
+| Metric | Numerator | Denominator |
+| --- | --- | --- |
+| Save rate | Distinct impressions with at least one SAVE within 30m | Mature impressions in the cohort |
+| Retailer-click rate | Distinct impressions with at least one CLICK_OUT within 30m | Same |
+| Skip rate | Distinct impressions with at least one SKIP within 30m | Same |
+| Unsave rate | Distinct impressions with at least one UNSAVE within 30m | Same |
+
+Rates are fractions, not percentages. Zero denominators return `null`, not zero. The
+metric helper reports immature impressions separately; the report only selects mature
+cohorts so every included impression has a complete attribution opportunity. Cohorts
+are selected by impression time, not outcome time. Deduplicated numerators cannot
+exceed denominators. An impression with no outcome is “no observed action,” not proven
+disinterest. Counts differ intentionally from the training event count.
+
+**Deployment and retention.** Run `npx prisma migrate deploy` before deploying this
+code and regenerate Prisma Client (`npm ci` already does this). Configure a strong
+`CRON_SECRET` in Vercel. `vercel.json` schedules the authenticated
+`/api/cron/evaluation-retention` job daily at 06:00 UTC. It removes impressions older
+than 30 days and cascades outcomes; with a healthy daily job physical retention can
+reach roughly 31 days. On other hosts, schedule the same authenticated GET daily.
+Monitor failures and alert on missed cleanup; do not enable collection until cleanup
+is configured and verified. Consent withdrawal deletes immediately. Backup retention
+and deletion processes must also match the deployment's privacy commitments.
+
+**Before claiming effectiveness.** This is observational instrumentation, not an A/B
+experiment. Define the target population, eligibility/exclusions, primary metric,
+minimum detectable effect/sample size, analysis window and guardrails in advance.
+Establish consent-appropriate randomized assignment (including persisted experiment
+and variant IDs, neither implemented here), stable assignment units, treatment isolation,
+and sample-ratio/telemetry-loss checks before a controlled experiment. Account for
+position/exposure bias, repeat users, opt-in selection, inventory/price changes and
+seasonality; calculate uncertainty using the randomization unit rather than treating
+all impressions as independent. Temporal held-out evaluation requires a frozen policy,
+time-safe feature/catalog snapshots and no future-feedback leakage; current records
+alone do not reconstruct old candidate sets or personalized scores. Save and retailer
+click rates are engagement proxies, not purchase conversion. Report coverage, losses,
+sample sizes and uncertainty alongside any comparison. No conversion uplift is claimed.
+
+Tests cover validation, dwell/visibility cleanup, retries and duplicate protection,
+attribution boundaries, mature-cohort metrics, authentication/consent and deletion.
+CI additionally exercises real PostgreSQL constraints, concurrent duplicate writes,
+withdrawal races and retention/account-deletion cascades with
+`EVALUATION_TEST_DATABASE=1 npx tsx scripts/test-evaluation.ts` on a disposable database.
