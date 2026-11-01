@@ -1,27 +1,19 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { AccountInputError, parseSignup, readAccountJson } from "@/lib/account-input";
 
 export async function POST(req: Request) {
-  const { email, password, name } = await req.json();
-
-  if (!email || !password || password.length < 8) {
-    return NextResponse.json(
-      { error: "Email and an 8+ character password are required." },
-      { status: 400 }
-    );
+  try {
+    const { email, password, name } = parseSignup(await readAccountJson(req, 8192));
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return NextResponse.json({ error: "An account with that email already exists." }, { status: 409 });
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({ data: { email, passwordHash, name, role: "USER" } });
+    return NextResponse.json({ id: user.id, email: user.email });
+  } catch (error) {
+    if (error instanceof AccountInputError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if ((error as { code?: string })?.code === "P2002") return NextResponse.json({ error: "An account with that email already exists." }, { status: 409 });
+    return NextResponse.json({ error: "Could not create your account. Please try again." }, { status: 503 });
   }
-
-  const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-  if (existing) {
-    return NextResponse.json({ error: "An account with that email already exists." }, { status: 409 });
-  }
-
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({
-    // Public registration never accepts a client-supplied role.
-    data: { email: email.toLowerCase(), passwordHash, name: name || undefined, role: "USER" },
-  });
-
-  return NextResponse.json({ id: user.id, email: user.email });
 }
