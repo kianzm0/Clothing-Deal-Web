@@ -36,8 +36,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function PreferencesPage() {
-  const { prefs, update, hydrated } = usePreferences();
-  if (!hydrated) return null;
+  const { prefs, update, hydrated, error, retry } = usePreferences();
+  if (!hydrated) return <p role={error ? "alert" : "status"}>{error ?? "Loading preferences…"} {error && <button onClick={retry}>Retry</button>}</p>;
 
   return (
     <div className="max-w-2xl">
@@ -46,6 +46,7 @@ export default function PreferencesPage() {
         These drive the "Best match" sort on the browse page. When you're signed in, it also learns from what you save and skip.
       </p>
 
+      {error && <p role="alert">{error} <button onClick={retry}>Retry</button></p>}
       <div className="rounded-2xl border border-ink-100 bg-white p-6 shadow-card">
         <Section title="Sizes">
           <div className="flex flex-wrap gap-2">
@@ -115,3 +116,4 @@ export default function PreferencesPage() {
     </div>
   );
 }
+

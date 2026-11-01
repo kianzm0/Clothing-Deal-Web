@@ -12,6 +12,7 @@ export default function WatchlistClient({ products }: { products: Product[] }) {
     <div>
       <h1 className="mb-1 text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl">Your watchlist</h1>
       <p className="mb-6 text-sm text-ink-500">Items you've saved to keep an eye on.</p>
+      {watchlist.error && <p role="alert">{watchlist.error} <button onClick={watchlist.retry}>Retry</button></p>}
       {!hydrated ? (
         <p role="status" className="text-sm text-ink-500">Loading your watchlist…</p>
       ) : ids.length === 0 ? (
@@ -39,3 +40,4 @@ export default function WatchlistClient({ products }: { products: Product[] }) {
     </div>
   );
 }
+
