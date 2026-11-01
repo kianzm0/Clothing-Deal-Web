@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { Category, Offer, Product } from "./types";
+import { catalogAttributesFromProducts, CatalogAttributes } from "./catalog-options";
 
 // This is the file that changed for Phase 3. Pages still call only
 // getAllProducts() / getProductById() — nothing in app/ or
@@ -52,6 +53,10 @@ function toProduct(row: any): Product {
 export async function getAllProducts(): Promise<Product[]> {
   const rows = await prisma.product.findMany({ include: { offers: true } });
   return rows.map(toProduct).filter((product) => product.offers.length > 0);
+}
+
+export async function getCatalogAttributes(): Promise<CatalogAttributes> {
+  return catalogAttributesFromProducts(await getAllProducts());
 }
 
 export async function getProductById(id: string): Promise<Product | undefined> {
