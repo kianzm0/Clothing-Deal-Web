@@ -62,7 +62,7 @@ function ProductCardContent({ product, onInteract, prefs, reasons, watchlist }: 
   }
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card transition hover:-translate-y-0.5 hover:shadow-card-hover">
+    <div data-recommendation-card={product.id} className="group relative overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card transition hover:-translate-y-0.5 hover:shadow-card-hover">
       <div className="absolute right-3 top-3 z-10 flex gap-1.5">
         <button
           onClick={handleSkip}
@@ -109,3 +109,4 @@ function ProductCardContent({ product, onInteract, prefs, reasons, watchlist }: 
     </div>
   );
 }
+

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { DEFAULT_WEIGHTS, alignWeights, InteractionAction } from "./bandit";
 import { EMPTY_PROFILE, PreferenceProfile } from "./preference-model";
+import { recordAttributedAction } from "./evaluation-client";
 import { Preferences } from "./types";
 
 export function useBandit() {
@@ -32,6 +33,7 @@ export function useBandit() {
   const signedIn = !!userId && state.userId === userId;
   const recordInteraction = useCallback(
     (productId: string, action: InteractionAction, _prefs: Preferences) => {
+      if (userId) recordAttributedAction(userId, productId, action);
       if (!signedIn) return;
       const current = generation.current;
       // Preserve the user's action order and reject responses for a former
@@ -59,3 +61,4 @@ export function useBandit() {
   return { signedIn, weights: signedIn ? state.weights : DEFAULT_WEIGHTS,
     profile: signedIn ? state.profile : EMPTY_PROFILE, recordInteraction };
 }
+
