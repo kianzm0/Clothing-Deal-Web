@@ -1,6 +1,8 @@
-import { DEFAULT_ALLOWED_RETAILERS, findRetailer, normalizeProductUrl, Retailer } from "./retailers";
+import type { Retailer } from "./retailers";
+import { DEFAULT_ALLOWED_RETAILERS, findRetailer, normalizeProductUrl } from "./retailers";
 
 const DEFAULT_TIMEOUT_MS = 12000;
+export const MAX_RETAILER_HTML_BYTES = 2 * 1024 * 1024;
 
 export type Availability = "in_stock" | "out_of_stock" | "preorder" | "unknown";
 export type DealStatus = "active" | "needs_review";
@@ -56,6 +58,10 @@ export async function scavengeProductUrl(
     parsedUrl = normalizeProductUrl(rawUrl);
   } catch (error) {
     throw new ScavengerError("Invalid product URL.", 400, { cause: (error as Error).message });
+  }
+
+  if (parsedUrl.protocol !== "https:" || parsedUrl.username || parsedUrl.password || parsedUrl.port) {
+    throw new ScavengerError("Use an HTTPS retailer URL without credentials or a custom port.", 400);
   }
 
   const retailer = findRetailer(parsedUrl.hostname, allowedRetailers);
@@ -163,6 +169,9 @@ async function fetchHtml(
   try {
     const response = await fetch(url, {
       signal: controller.signal,
+      // Never let an allowlisted URL redirect the server to a private address
+      // or another host. Editors must supply the retailer's final HTTPS URL.
+      redirect: "manual",
       cache: "no-store",
       headers: {
         accept: "text/html,application/xhtml+xml",
@@ -172,7 +181,12 @@ async function fetchHtml(
       },
     });
 
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel();
+      throw new ScavengerError("Retailer redirects are not followed. Use the final HTTPS product URL.", 422);
+    }
     if (!response.ok) {
+      await response.body?.cancel();
       throw new ScavengerError("Retailer page could not be fetched.", 502, {
         status: response.status,
         url,
@@ -181,12 +195,36 @@ async function fetchHtml(
 
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.includes("text/html") && !contentType.includes("application/xhtml")) {
+      await response.body?.cancel();
       throw new ScavengerError("Retailer URL did not return an HTML product page.", 415, {
         contentType,
       });
     }
 
-    return await response.text();
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (declaredLength > MAX_RETAILER_HTML_BYTES) {
+      await response.body?.cancel();
+      throw new ScavengerError("Retailer page exceeds the download limit.", 413);
+    }
+    if (!response.body) return "";
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let bytes = 0, html = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytes += value.byteLength;
+        // Count actual decoded response bytes, including chunked/compressed
+        // responses with absent or misleading Content-Length headers.
+        if (bytes > MAX_RETAILER_HTML_BYTES) {
+          await reader.cancel();
+          throw new ScavengerError("Retailer page exceeds the download limit.", 413);
+        }
+        html += decoder.decode(value, { stream: true });
+      }
+      return html + decoder.decode();
+    } finally { reader.releaseLock(); }
   } catch (error) {
     if (error instanceof ScavengerError) throw error;
     throw new ScavengerError("Timed out or failed while fetching retailer page.", 504, {
@@ -384,3 +422,4 @@ function decodeHtml(value: unknown): string {
     .replace(/&gt;/g, ">")
     .replace(/&#39;/g, "'");
 }
+
