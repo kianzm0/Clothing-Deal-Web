@@ -1,168 +1,83 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { useSession } from "next-auth/react";
 import { DEFAULT_PREFERENCES, Preferences } from "./types";
+import { AccountStore } from "./account-store";
 
-// Client-side persistence layer. Signed-out visitors get exactly the
-// original localStorage behavior from Phase 1. Signed-in users get
-// a server-backed twin (Phase 6) behind the same hook names, so no
-// component had to change — they still just call useWatchlist() /
-// usePreferences(). The one extra piece is a one-time migration: if
-// someone built up a watchlist or preferences while signed out, that
-// data gets pushed to their account the moment they sign in, instead
-// of silently vanishing.
-
-const WATCHLIST_KEY = "threadscout:watchlist";
-const PREFS_KEY = "threadscout:preferences";
-
-function readJSON<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
+// Legacy keys mixed guest and account data. Do not import them into any account.
+// Fresh guest-only keys deliberately avoid displaying a former user's cache.
+const WATCHLIST_KEY = "threadscout:guest:watchlist:v2";
+const PREFS_KEY = "threadscout:guest:preferences:v2";
+const watchlists = new Map<string, AccountStore<string[]>>();
+const preferences = new Map<string, AccountStore<Preferences>>();
+function readGuest<T>(key: string, fallback: T, valid: (value: unknown) => value is T): T {
   try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
+    const value: unknown = JSON.parse(localStorage.getItem(key) ?? "null");
+    return valid(value) ? value : fallback;
+  } catch { return fallback; }
+}
+const validIds = (v: unknown): v is string[] => Array.isArray(v) && v.length <= 10000 && v.every(id => typeof id === "string" && id.length > 0 && id.length <= 200);
+function validPrefs(v: unknown): v is Preferences {
+  if (!v || typeof v !== "object") return false;
+  const p = v as Preferences;
+  return [p.sizes, p.favoriteBrands, p.dislikedBrands, p.colors, p.fits].every(a => Array.isArray(a) && a.length <= 100 && a.every(s => typeof s === "string" && s.length <= 100)) &&
+    Number.isFinite(p.maxBudget) && p.maxBudget >= 0 && Number.isFinite(p.minDiscountPct) && p.minDiscountPct >= 0 && p.minDiscountPct <= 100;
+}
+async function request(path: string, signal: AbortSignal, method?: string, body?: unknown) {
+  const response = await fetch(path, { signal, cache: "no-store", ...(method ? { method,
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
+  if (!response.ok) throw new Error("Account request failed");
+  return response.json();
+}
+function useScope() {
+  const { data: session, status } = useSession();
+  return status === "authenticated" && session?.user?.id ? `account:${session.user.id}` : status === "unauthenticated" ? "guest" : "loading";
+}
+function watchlistStore(scope: string) {
+  let store = watchlists.get(scope);
+  if (!store) {
+    store = new AccountStore<string[]>([], async signal => {
+      if (scope === "guest") return readGuest(WATCHLIST_KEY, [], validIds);
+      if (scope === "loading") return [];
+      const body = await request("/api/watchlist", signal);
+      if (!body.signedIn || !validIds(body.ids)) throw new Error("Invalid watchlist");
+      return [...new Set(body.ids)] as string[];
+    }, async (next, previous, signal) => {
+      if (scope === "guest") { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(next)); return; }
+      if (scope === "loading") return;
+      const added = next.find(id => !previous.includes(id)), removed = previous.find(id => !next.includes(id));
+      if (added || removed) await request("/api/watchlist", signal, added ? "POST" : "DELETE", { productId: added ?? removed });
+    });
+    watchlists.set(scope, store);
   }
+  return store;
 }
-
-function writeJSON<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
+function preferenceStore(scope: string) {
+  let store = preferences.get(scope);
+  if (!store) {
+    store = new AccountStore<Preferences>(DEFAULT_PREFERENCES, async signal => {
+      if (scope === "guest") return readGuest(PREFS_KEY, DEFAULT_PREFERENCES, validPrefs);
+      if (scope === "loading") return DEFAULT_PREFERENCES;
+      const body = await request("/api/preferences", signal);
+      if (!body.signedIn || !validPrefs(body.prefs)) throw new Error("Invalid preferences");
+      return body.prefs;
+    }, async (next, _previous, signal) => {
+      if (scope === "guest") { localStorage.setItem(PREFS_KEY, JSON.stringify(next)); return; }
+      if (scope !== "loading") await request("/api/preferences", signal, "PUT", next);
+    });
+    preferences.set(scope, store);
+  }
+  return store;
 }
-
 export function useWatchlist() {
-  const { status } = useSession();
-  const [ids, setIds] = useState<string[]>([]);
-  const [hydrated, setHydrated] = useState(false);
-  const [signedIn, setSignedIn] = useState(false);
-  const migrated = useRef(false);
-
-  // Local read is instant, so the UI never waits on a network round
-  // trip just to know what's saved.
-  useEffect(() => {
-    setIds(readJSON<string[]>(WATCHLIST_KEY, []));
-    setHydrated(true);
-  }, []);
-
-  // Once authenticated, reconcile with the server: anything saved
-  // locally before sign-in gets pushed up once, then the server
-  // becomes the source of truth for the rest of the session.
-  useEffect(() => {
-    if (status !== "authenticated" || migrated.current) return;
-    migrated.current = true;
-
-    (async () => {
-      const res = await fetch("/api/watchlist").then((r) => r.json()).catch(() => null);
-      if (!res?.signedIn) return;
-
-      const local = readJSON<string[]>(WATCHLIST_KEY, []);
-      const serverIds: string[] = res.ids;
-      const localOnly = local.filter((id) => !serverIds.includes(id));
-
-      await Promise.all(
-        localOnly.map((productId) =>
-          fetch("/api/watchlist", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ productId }),
-          }).catch(() => {})
-        )
-      );
-
-      const merged = [...serverIds, ...localOnly];
-      setIds(merged);
-      writeJSON(WATCHLIST_KEY, merged);
-      setSignedIn(true);
-    })();
-  }, [status]);
-
-  function toggle(id: string) {
-    setIds((prev) => {
-      const isRemoving = prev.includes(id);
-      const next = isRemoving ? prev.filter((x) => x !== id) : [...prev, id];
-      writeJSON(WATCHLIST_KEY, next);
-
-      if (signedIn) {
-        const request = isRemoving
-          ? fetch("/api/watchlist", {
-              method: "DELETE",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ productId: id }),
-            })
-          : fetch("/api/watchlist", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ productId: id }),
-            });
-        request.catch(() => {}); // best-effort; localStorage already has the correct state
-      }
-
-      return next;
-    });
-  }
-
-  return { ids, toggle, hydrated };
+  const scope = useScope(), store = watchlistStore(scope);
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot);
+  return { ids: state.data, hydrated: scope !== "loading" && state.hydrated, error: state.error, retry: store.reload,
+    toggle: (id: string) => { if (scope !== "loading") store.update(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]); } };
 }
-
 export function usePreferences() {
-  const { status } = useSession();
-  const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFERENCES);
-  const [hydrated, setHydrated] = useState(false);
-  const [signedIn, setSignedIn] = useState(false);
-  const migrated = useRef(false);
-
-  useEffect(() => {
-    setPrefs(readJSON<Preferences>(PREFS_KEY, DEFAULT_PREFERENCES));
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (status !== "authenticated" || migrated.current) return;
-    migrated.current = true;
-
-    (async () => {
-      const res = await fetch("/api/preferences").then((r) => r.json()).catch(() => null);
-      if (!res?.signedIn) return;
-
-      const local = readJSON<Preferences>(PREFS_KEY, DEFAULT_PREFERENCES);
-      const localCustomized = JSON.stringify(local) !== JSON.stringify(DEFAULT_PREFERENCES);
-      const serverCustomized = JSON.stringify(res.prefs) !== JSON.stringify(DEFAULT_PREFERENCES);
-
-      // If preferences were set locally before sign-in and the server
-      // has nothing yet, push the local ones up rather than discarding
-      // them. If the server already has its own, that wins instead.
-      const finalPrefs = !serverCustomized && localCustomized ? local : res.prefs;
-
-      if (!serverCustomized && localCustomized) {
-        await fetch("/api/preferences", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(finalPrefs),
-        }).catch(() => {});
-      }
-
-      setPrefs(finalPrefs);
-      writeJSON(PREFS_KEY, finalPrefs);
-      setSignedIn(true);
-    })();
-  }, [status]);
-
-  function update(next: Partial<Preferences>) {
-    setPrefs((prev) => {
-      const merged = { ...prev, ...next };
-      writeJSON(PREFS_KEY, merged);
-
-      if (signedIn) {
-        fetch("/api/preferences", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(merged),
-        }).catch(() => {});
-      }
-
-      return merged;
-    });
-  }
-
-  return { prefs, update, hydrated };
+  const scope = useScope(), store = preferenceStore(scope);
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot);
+  return { prefs: state.data, hydrated: scope !== "loading" && state.hydrated, error: state.error, retry: store.reload,
+    update: (next: Partial<Preferences>) => { if (scope !== "loading") store.update(prefs => ({ ...prefs, ...next })); } };
 }

@@ -74,6 +74,7 @@ function ProductCardContent({ product, onInteract, prefs, reasons, watchlist }: 
         </button>
         <button
           onClick={handleToggleSave}
+          disabled={!hydrated}
           aria-label={saved ? "Remove from watchlist" : "Save to watchlist"}
           className={`flex h-7 w-7 items-center justify-center rounded-full shadow-sm backdrop-blur transition ${
             saved ? "bg-brand-500 text-white" : "bg-white/90 text-ink-400 hover:text-brand-500"
@@ -83,6 +84,7 @@ function ProductCardContent({ product, onInteract, prefs, reasons, watchlist }: 
         </button>
       </div>
 
+      {watchlist.error && <p role="alert" className="p-3 text-xs">{watchlist.error} <button onClick={watchlist.retry}>Retry</button></p>}
       <Link href={`/product/${product.id}`}>
         <div className="relative flex h-36 items-center justify-center bg-gradient-to-br from-ink-50 to-brand-50 text-4xl">
           {CATEGORY_GLYPH[product.category]}
@@ -109,4 +111,5 @@ function ProductCardContent({ product, onInteract, prefs, reasons, watchlist }: 
     </div>
   );
 }
+
 
