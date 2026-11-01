@@ -229,8 +229,9 @@ concurrent duplicate suppression and distinct feedback updates, plus the full
 typecheck and production build.
 
 These are behavioral regression checks with synthetic fixtures, not evidence
-of higher real-world conversion. Production evaluation still needs impression
-logging and a consent-appropriate experiment or temporal held-out dataset.
+of higher real-world conversion. Opt-in impression instrumentation is now available
+(see Recommendation evaluation below); production evaluation still needs actual
+consented data and a valid experiment or temporal held-out dataset.
 There is no cross-user collaborative filtering or purchase tracking. Historical
 product features are reconstructed from the current catalog; the profile is
 bounded to 300 events, and prior online weights are retained. Diversity is a
