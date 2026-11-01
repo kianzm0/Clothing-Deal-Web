@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ATTRIBUTION_MS, evaluationMetrics, isAttributable, parseExposure } from "./evaluation";
-import { ExposureRecorder, observeCards } from "./evaluation-client";
+import { ExposureRecorder, observeCards, recordAttributedAction, clearAttribution } from "./evaluation-client";
 const exposure = { id: "cb7cb553-286a-4c06-a230-a75cc1787506", viewId: "b655eb33-667a-4e1f-a2ab-3629a597fa46", productId: "product",
   position: 1, resultCount: 6, sort: "best-match" as const, filtered: false, personalized: true, displayedTotal: 25 };
 test("strict validation drops arbitrary personal metadata and rejects invalid positions", () => {
@@ -79,5 +79,33 @@ test("viewport dwell cancels on scroll, hidden tabs and cleanup; unsupported bro
     for (const [key, descriptor] of Object.entries(saved)) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete (globalThis as any)[key];
     }
+  }
+});
+
+test("attribution storage is account-scoped, expires, and clears on withdrawal", async () => {
+  const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  const originalFetch = globalThis.fetch;
+  const storage = new Map<string, string>();
+  const sent: any[] = [];
+  Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key),
+  } });
+  globalThis.fetch = async (_url, options) => { sent.push(JSON.parse(options!.body as string)); return Response.json({}); };
+  try {
+    const recorder = new ExposureRecorder("owner", async () => Response.json({ id: exposure.id }));
+    await recorder.record(exposure);
+    recordAttributedAction("other", exposure.productId, "SAVE");
+    recordAttributedAction("owner", "other-product", "SAVE");
+    assert.equal(sent.length, 0);
+    recordAttributedAction("owner", exposure.productId, "CLICK_OUT");
+    assert.equal(sent.length, 1); assert.equal(sent[0].impressionId, exposure.id);
+    for (const [key, value] of storage) storage.set(key, JSON.stringify(JSON.parse(value).map((r: any) => ({ ...r, at: Date.now() - ATTRIBUTION_MS - 1 }))));
+    recordAttributedAction("owner", exposure.productId, "SAVE"); assert.equal(sent.length, 1);
+    clearAttribution(); assert.equal(storage.size, 0);
+    recordAttributedAction("owner", exposure.productId, "SAVE"); assert.equal(sent.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (storageDescriptor) Object.defineProperty(globalThis, "sessionStorage", storageDescriptor); else delete (globalThis as any).sessionStorage;
   }
 });
