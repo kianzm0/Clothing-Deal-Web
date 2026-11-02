@@ -84,7 +84,7 @@ function ProductCardContent({ product, onInteract, prefs, reasons, watchlist }: 
         <div className="relative flex h-36 items-center justify-center">
           <ProductImage
             src={product.image}
-            alt={`${product.brand} ${product.category} product photograph`}
+            alt={`${product.brand} ${product.name}`}
             category={product.category}
           />
           {discount > 0 && (
