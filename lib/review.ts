@@ -1,4 +1,5 @@
 import { Category } from "./types";
+import { hasSafeImageUrl } from "./product-image";
 
 export const REVIEW_CATEGORIES: Category[] = ["t-shirt", "hoodie", "sweatshirt", "long-sleeve"];
 
@@ -42,7 +43,7 @@ export function parseReviewOverrides(input: unknown): ReviewOverrides {
   if (name) result.name = name;
   if (brand) result.brand = brand;
   if (imageUrl) {
-    try { new URL(imageUrl); } catch { throw new Error("imageUrl must be a valid URL."); }
+    if (!hasSafeImageUrl(imageUrl)) throw new Error("imageUrl must be a safe HTTP(S) URL or app-relative path.");
     result.imageUrl = imageUrl;
   }
   if (availability && !["in_stock", "out_of_stock", "preorder", "unknown"].includes(availability)) throw new Error("availability is invalid.");
