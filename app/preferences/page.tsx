@@ -1,27 +1,27 @@
 "use client";
+import { useEffect, useState } from "react";
 import { usePreferences } from "@/lib/store";
-import { PRODUCTS } from "@/lib/data";
+import { CatalogAttributes, mergeSavedOptions } from "@/lib/catalog-options";
 import LearnedPreferences from "@/components/LearnedPreferences";
 
-const ALL_BRANDS = Array.from(new Set(PRODUCTS.map((p) => p.brand))).sort();
-const ALL_COLORS = Array.from(new Set(PRODUCTS.flatMap((p) => p.colors))).sort();
-const ALL_SIZES = Array.from(new Set(PRODUCTS.flatMap((p) => p.sizes))).sort();
+const EMPTY_CATALOG: CatalogAttributes = { brands: [], colors: [], sizes: [] };
 
 function toggleInList(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
-function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Pill({ active, unavailable, onClick, children }: { active: boolean; unavailable?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
+      aria-label={unavailable ? `${children} (saved, currently unavailable)` : undefined}
       className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition ${
         active
           ? "border-brand-500 bg-brand-500 text-white"
           : "border-ink-200 bg-white text-ink-600 hover:border-ink-300"
       }`}
     >
-      {children}
+      {children}{unavailable && <span className="ml-1 text-xs opacity-80">(saved)</span>}
     </button>
   );
 }
@@ -35,8 +35,51 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+function Options({ available, selected, onToggle }: { available: string[]; selected: string[]; onToggle: (value: string) => void }) {
+  const values = mergeSavedOptions(available, selected);
+  if (values.length === 0) return <p className="text-sm text-ink-400">No catalog options are currently available.</p>;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {values.map((value) => (
+        <Pill
+          key={value}
+          active={selected.includes(value)}
+          unavailable={!available.includes(value)}
+          onClick={() => onToggle(value)}
+        >
+          {value}
+        </Pill>
+      ))}
+    </div>
+  );
+}
+
 export default function PreferencesPage() {
   const { prefs, update, hydrated, error, retry } = usePreferences();
+  const [catalog, setCatalog] = useState<CatalogAttributes>(EMPTY_CATALOG);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogRetry, setCatalogRetry] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCatalogLoading(true);
+    setCatalogError(null);
+    fetch("/api/catalog/attributes", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Catalog options are temporarily unavailable.");
+        return response.json() as Promise<CatalogAttributes>;
+      })
+      .then((attributes) => setCatalog(attributes))
+      .catch((reason: unknown) => {
+        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        setCatalogError(reason instanceof Error ? reason.message : "Catalog options are temporarily unavailable.");
+        setCatalog(EMPTY_CATALOG);
+      })
+      .finally(() => setCatalogLoading(false));
+    return () => controller.abort();
+  }, [catalogRetry]);
+
   if (!hydrated) return <p role={error ? "alert" : "status"}>{error ?? "Loading preferences…"} {error && <button onClick={retry}>Retry</button>}</p>;
 
   return (
@@ -47,45 +90,27 @@ export default function PreferencesPage() {
       </p>
 
       {error && <p role="alert">{error} <button onClick={retry}>Retry</button></p>}
+      {catalogError && (
+        <p role="alert">
+          {catalogError} <button onClick={() => setCatalogRetry((value) => value + 1)}>Retry catalog</button>
+        </p>
+      )}
+      {catalogLoading && <p role="status">Loading catalog options…</p>}
       <div className="rounded-2xl border border-ink-100 bg-white p-6 shadow-card">
         <Section title="Sizes">
-          <div className="flex flex-wrap gap-2">
-            {ALL_SIZES.map((s) => (
-              <Pill key={s} active={prefs.sizes.includes(s)} onClick={() => update({ sizes: toggleInList(prefs.sizes, s) })}>
-                {s}
-              </Pill>
-            ))}
-          </div>
+          <Options available={catalog.sizes} selected={prefs.sizes} onToggle={(value) => update({ sizes: toggleInList(prefs.sizes, value) })} />
         </Section>
 
         <Section title="Favorite brands">
-          <div className="flex flex-wrap gap-2">
-            {ALL_BRANDS.map((b) => (
-              <Pill key={b} active={prefs.favoriteBrands.includes(b)} onClick={() => update({ favoriteBrands: toggleInList(prefs.favoriteBrands, b) })}>
-                {b}
-              </Pill>
-            ))}
-          </div>
+          <Options available={catalog.brands} selected={prefs.favoriteBrands} onToggle={(value) => update({ favoriteBrands: toggleInList(prefs.favoriteBrands, value) })} />
         </Section>
 
         <Section title="Disliked brands">
-          <div className="flex flex-wrap gap-2">
-            {ALL_BRANDS.map((b) => (
-              <Pill key={b} active={prefs.dislikedBrands.includes(b)} onClick={() => update({ dislikedBrands: toggleInList(prefs.dislikedBrands, b) })}>
-                {b}
-              </Pill>
-            ))}
-          </div>
+          <Options available={catalog.brands} selected={prefs.dislikedBrands} onToggle={(value) => update({ dislikedBrands: toggleInList(prefs.dislikedBrands, value) })} />
         </Section>
 
         <Section title="Colors">
-          <div className="flex flex-wrap gap-2">
-            {ALL_COLORS.map((c) => (
-              <Pill key={c} active={prefs.colors.includes(c)} onClick={() => update({ colors: toggleInList(prefs.colors, c) })}>
-                {c}
-              </Pill>
-            ))}
-          </div>
+          <Options available={catalog.colors} selected={prefs.colors} onToggle={(value) => update({ colors: toggleInList(prefs.colors, value) })} />
         </Section>
 
         <Section title="Budget & discount">
@@ -116,4 +141,3 @@ export default function PreferencesPage() {
     </div>
   );
 }
-
