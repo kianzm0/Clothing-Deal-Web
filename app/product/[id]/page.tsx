@@ -2,7 +2,8 @@ import Link from "next/link";
 import { getProductById } from "@/lib/repository";
 import { notFound } from "next/navigation";
 import OfferTable from "@/components/OfferTable";
-import { CATEGORY_GLYPH, CATEGORY_LABEL } from "@/lib/category";
+import ProductImage from "@/components/ProductImage";
+import { CATEGORY_LABEL } from "@/lib/category";
 
 export default async function ProductPage({ params }: { params: { id: string } }) {
   const product = await getProductById(params.id);
@@ -17,8 +18,13 @@ export default async function ProductPage({ params }: { params: { id: string } }
       </Link>
 
       <div className="grid gap-8 sm:grid-cols-[16rem,1fr]">
-        <div className="flex h-64 items-center justify-center rounded-2xl border border-ink-100 bg-gradient-to-br from-ink-50 to-brand-50 text-6xl">
-          {CATEGORY_GLYPH[product.category]}
+        <div className="h-64 rounded-2xl border border-ink-100">
+          <ProductImage
+            src={product.image}
+            alt={`${product.brand} ${product.name}`}
+            category={product.category}
+            className="rounded-2xl"
+          />
         </div>
 
         <div>
