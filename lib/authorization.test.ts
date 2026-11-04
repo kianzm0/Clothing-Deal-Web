@@ -47,7 +47,7 @@ let existingOffer: boolean;
 const retailerUrl = "https://www.nike.com/t/test-shirt";
 const offer = {
   id: "offer-1", productId: "product-1", store: "Nike", price: 20, originalPrice: 30,
-  shippingCost: 0, sizesInStock: ["M"], lastUpdated: new Date(), url: retailerUrl,
+  shippingCost: 0, currency: "USD", sizesInStock: ["M"], lastUpdated: new Date(), url: retailerUrl,
   status: "active",
 };
 const product = {

@@ -17,8 +17,8 @@ function stub(target: object, key: string, implementation: (...args: any[]) => a
 
 const offer = (status = "active") => ({
   store: "Retailer", price: 20, originalPrice: 30, shippingCost: 0,
-  sizesInStock: ["M"], lastUpdated: new Date("2026-10-30"),
-  url: "https://example.test/item", status,
+  currency: "USD", sizesInStock: ["M"], lastUpdated: new Date("2026-10-30"),
+  currency: "USD", url: "https://example.test/item", status,
 });
 const row = (id: string, brand: string, colors: string[], sizes: string[], status = "active") => ({
   id, name: id, brand, category: "T_SHIRT", colors, sizes, image: "",
