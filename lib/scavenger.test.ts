@@ -52,6 +52,37 @@ test("extracts product deal fields from JSON-LD", () => {
   assert.equal(deal.discountPercent, 38);
   assert.equal(deal.availability, "in_stock");
   assert.equal(deal.status, "active");
+  assert.equal(deal.currency, "USD");
+});
+
+test("keeps foreign currencies explicit and holds them for review", () => {
+  const deal = extractDealCandidate({
+    html: `<script type="application/ld+json">${JSON.stringify({
+      "@type": "Product", name: "GBP Coat", offers: { price: "79.99", priceCurrency: "GBP" }
+    })}</script>`,
+    sourceUrl: "https://www.zara.com/gb/example",
+    canonicalUrl: "https://www.zara.com/gb/example",
+    retailer: { domain: "zara.com", name: "Zara" },
+    fetchedAt: "2026-09-15T00:00:00.000Z",
+  });
+  assert.equal(deal.currency, "GBP");
+  assert.equal(deal.status, "needs_review");
+  assert.match(deal.warnings.join(" "), /Unsupported currency/);
+});
+
+test("does not assume USD when currency is missing", () => {
+  const deal = extractDealCandidate({
+    html: `<script type="application/ld+json">${JSON.stringify({
+      "@type": "Product", name: "Unknown Currency Coat", offers: { price: "79.99" }
+    })}</script>`,
+    sourceUrl: "https://www.zara.com/example",
+    canonicalUrl: "https://www.zara.com/example",
+    retailer: { domain: "zara.com", name: "Zara" },
+    fetchedAt: "2026-09-15T00:00:00.000Z",
+  });
+  assert.equal(deal.currency, null);
+  assert.equal(deal.status, "needs_review");
+  assert.match(deal.warnings.join(" "), /Missing or invalid currency/);
 });
 
 test("falls back to meta tags and marks incomplete extraction for review", () => {

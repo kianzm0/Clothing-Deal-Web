@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { ingestDealForProduct } from "@/lib/offer-ingest";
 import { parseReviewOverrides, requireNewProductFields } from "@/lib/review";
 import { scavengerErrorResponse } from "@/lib/scavenger-response";
-import { scavengeProductUrl } from "@/lib/scavenger";
+import { ScavengerError, scavengeProductUrl } from "@/lib/scavenger";
+import { isSupportedCurrency } from "@/lib/currency";
 
 export async function POST(req: Request) {
   const denied = await requireEditorialAccess();
@@ -15,6 +16,9 @@ export async function POST(req: Request) {
   try { overrides = parseReviewOverrides(body.overrides); } catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
   try {
     const preview = await scavengeProductUrl(body.url);
+    if (!isSupportedCurrency(preview.currency)) {
+      return NextResponse.json({ error: "Only verified USD offers can be published; this candidate is held for editorial review.", currency: preview.currency }, { status: 422 });
+    }
     if (overrides.priceCents === undefined && preview.priceCents === null) return NextResponse.json({ error: "A current price is required before publishing." }, { status: 400 });
     let productId = typeof body.productId === "string" && body.productId.trim() ? body.productId : undefined;
     if (productId) {

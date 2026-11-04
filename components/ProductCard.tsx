@@ -6,6 +6,7 @@ import { bestOffer, discountPct } from "@/lib/pricing";
 import { useWatchlist } from "@/lib/store";
 import { recommendationOffer } from "@/lib/recommendation-offer";
 import ProductImage from "@/components/ProductImage";
+import { formatCurrency } from "@/lib/currency";
 
 type InteractionAction = "SAVE" | "UNSAVE" | "SKIP" | "CLICK_OUT";
 
@@ -97,13 +98,13 @@ function ProductCardContent({ product, onInteract, prefs, reasons, watchlist }: 
           <p className="text-xs font-medium uppercase tracking-wide text-ink-400">{product.brand}</p>
           <h3 className="mt-0.5 truncate font-semibold text-ink-900">{product.name}</h3>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-lg font-bold text-ink-900">${offer.price}</span>
+            <span className="text-lg font-bold text-ink-900">${formatCurrency(offer.price, offer.currency)}</span>
             {discount > 0 && (
-              <span className="text-sm text-ink-300 line-through">${offer.originalPrice}</span>
+              <span className="text-sm text-ink-300 line-through">${formatCurrency(offer.originalPrice, offer.currency)}</span>
             )}
           </div>
           <p className="mt-1 text-xs text-ink-400">{prefs?.sizes.length && offer.sizesInStock.some(s => prefs.sizes.includes(s)) ? "Your size at" : "Best at"} {offer.store}</p>
-          <p className="mt-1 text-xs text-ink-400">{offer.shippingCost ? `+$${offer.shippingCost} shipping` : "Free shipping"}</p>
+          <p className="mt-1 text-xs text-ink-400">{offer.shippingCost ? `+${formatCurrency(offer.shippingCost, offer.currency)} shipping` : "Free shipping"}</p>
           {reasons?.length ? <p className="mt-2 text-xs text-brand-600">{reasons.join(" · ")}</p> : null}
         </div>
       </Link>

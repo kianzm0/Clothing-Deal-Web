@@ -1,4 +1,5 @@
 import type { Retailer } from "./retailers";
+import { isSupportedCurrency, normalizeCurrency } from "./currency";
 import { DEFAULT_ALLOWED_RETAILERS, findRetailer, normalizeProductUrl } from "./retailers";
 
 const DEFAULT_TIMEOUT_MS = 12000;
@@ -17,7 +18,7 @@ export interface DealCandidate {
   imageUrl: string | null;
   priceCents: number | null;
   listPriceCents: number | null;
-  currency: string;
+  currency: string | null;
   discountPercent: number | null;
   availability: Availability;
   sku: string | null;
@@ -124,7 +125,7 @@ export function extractDealCandidate({
     canonicalUrl
   );
   const currency = normalizeCurrency(
-    pickFirst(offer?.priceCurrency, product.priceCurrency, fallbackPrices.currency, "USD")
+    pickFirst(offer?.priceCurrency, product.priceCurrency, fallbackPrices.currency)
   );
   const availability = normalizeAvailability(pickFirst(offer?.availability, product.availability));
   const discountPercent = computeDiscountPercent(price, listPrice);
@@ -152,10 +153,10 @@ export function extractDealCandidate({
     sku: cleanText(pickFirst(product.sku, product.mpn, meta["product:retailer_item_id"])),
     couponCode: null,
     fetchedAt,
-    status: confidence >= 0.7 && price ? "active" : "needs_review",
+    status: confidence >= 0.7 && price !== null && isSupportedCurrency(currency) ? "active" : "needs_review",
     confidence,
     extractionSources,
-    warnings: buildWarnings({ title, price, imageUrl, availability, confidence }),
+    warnings: buildWarnings({ title, price, imageUrl, availability, confidence, currency }),
   };
 }
 
@@ -327,10 +328,7 @@ function computeDiscountPercent(priceCents: number | null, listPriceCents: numbe
   return Math.round(((listPriceCents - priceCents) / listPriceCents) * 100);
 }
 
-function normalizeCurrency(value: unknown): string {
-  const currency = String(value ?? "USD").toUpperCase();
-  return /^[A-Z]{3}$/.test(currency) ? currency : "USD";
-}
+
 
 function normalizeAvailability(value: unknown): Availability {
   if (!value) return "unknown";
@@ -383,18 +381,22 @@ function buildWarnings({
   imageUrl,
   availability,
   confidence,
+  currency,
 }: {
   title: string | null;
   price: number | null;
   imageUrl: string | null;
   availability: Availability;
   confidence: number;
+  currency: string | null;
 }): string[] {
   return [
     title ? null : "Missing product title.",
     price ? null : "Missing current price.",
     imageUrl ? null : "Missing product image.",
     availability === "out_of_stock" ? "Product appears out of stock." : null,
+    currency === null ? "Missing or invalid currency; hold for editorial review." : null,
+    currency !== null && !isSupportedCurrency(currency) ? `Unsupported currency (${currency}); hold for editorial review.` : null,
     confidence < 0.7 ? "Low extraction confidence; send to editorial review before publishing." : null,
   ].filter((value): value is string => Boolean(value));
 }

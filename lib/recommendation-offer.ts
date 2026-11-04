@@ -1,9 +1,11 @@
+import { isSupportedCurrency } from "./currency";
 import { Offer, Preferences, Product } from "./types";
 
 export const totalPrice = (offer: Offer) => offer.price + offer.shippingCost;
 
 export function eligibleOffers(product: Product): Offer[] {
   return product.offers.filter(offer =>
+    isSupportedCurrency(offer.currency) &&
     offer.status !== "needs_review" &&
     !/out.?of.?stock|sold.?out|discontinued/i.test(offer.availability ?? "") &&
     Number.isFinite(offer.price) && offer.price >= 0 &&
