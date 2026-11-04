@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ingestDealForProduct } from "@/lib/offer-ingest";
 import { parseReviewOverrides, requireNewProductFields } from "@/lib/review";
 import { scavengerErrorResponse } from "@/lib/scavenger-response";
-import { ScavengerError, scavengeProductUrl } from "@/lib/scavenger";
+import { scavengeProductUrl } from "@/lib/scavenger";
 import { isSupportedCurrency } from "@/lib/currency";
 
 export async function POST(req: Request) {

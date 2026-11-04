@@ -40,10 +40,10 @@ export default function OfferTable({ product, offers }: { product: Product; offe
             </div>
 
             <div className="flex items-baseline gap-2">
-              <span className="text-lg font-bold text-ink-900">${formatCurrency(offer.price, offer.currency)}</span>
+              <span className="text-lg font-bold text-ink-900">{formatCurrency(offer.price, offer.currency)}</span>
               {discount > 0 && (
                 <>
-                  <span className="text-sm text-ink-300 line-through">${formatCurrency(offer.originalPrice, offer.currency)}</span>
+                  <span className="text-sm text-ink-300 line-through">{formatCurrency(offer.originalPrice, offer.currency)}</span>
                   <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">
                     -{discount}%
                   </span>
