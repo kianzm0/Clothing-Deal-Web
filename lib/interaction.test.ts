@@ -17,7 +17,7 @@ function stub(target: object, key: string, fn: (...args: any[]) => any) {
   return spy;
 }
 const p: Product = { id: "p", name: "Hoodie", brand: "Nike", category: "hoodie", colors: [], sizes: ["M"], image: "",
-  offers: [{ store: "Store", price: 50, originalPrice: 100, shippingCost: 0, currency: "USD", sizesInStock: ["M"], lastUpdated: "2026-01-01", currency: "USD", url: "#" }] };
+  offers: [{ store: "Store", price: 50, originalPrice: 100, shippingCost: 0, currency: "USD", sizesInStock: ["M"], lastUpdated: "2026-01-01", url: "#" }] };
 let latest: any, recentCount: number, session: any;
 let create: ReturnType<typeof stub>, upsert: ReturnType<typeof stub>, transaction: ReturnType<typeof stub>;
 beforeEach(() => {
