@@ -1,17 +1,24 @@
 import { NextResponse } from "next/server";
 import { requireEditorialAccess } from "@/lib/authorization";
 import { scavengeProductUrl } from "@/lib/scavenger";
+import { DealLinksInputError, readDealLinks, extractDealLinks } from "@/lib/deal-links";
 import { publicScavengerError } from "@/lib/scavenger-response";
 
 export async function POST(req: Request) {
   const denied = await requireEditorialAccess();
   if (denied) return denied;
 
-  const { urls } = await req.json().catch(() => ({}));
-  const list: string[] = Array.isArray(urls) ? urls : [];
-  if (!list.length) return NextResponse.json({ error: "urls must be a non-empty array." }, { status: 400 });
+  let list: string[];
+  try {
+    list = await readDealLinks(req);
+  } catch (error) {
+    if (error instanceof DealLinksInputError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
 
-  const results = await Promise.allSettled(list.map((url) => scavengeProductUrl(url)));
+  const results = await extractDealLinks(list, scavengeProductUrl);
   return NextResponse.json(
     {
       results: results.map((result, index) =>
@@ -23,3 +30,4 @@ export async function POST(req: Request) {
     { status: 207 }
   );
 }
+
