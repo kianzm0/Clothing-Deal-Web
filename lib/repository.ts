@@ -36,6 +36,8 @@ function toProduct(row: any): Product {
         price: o.price,
         originalPrice: o.originalPrice,
         shippingCost: o.shippingCost,
+        // Existing rows predate currency storage; preserve them as legacy USD until a reviewed migration adds the column.
+        currency: "USD",
         sizesInStock: o.sizesInStock,
         lastUpdated: o.lastUpdated.toISOString(),
         url: o.url,

@@ -29,7 +29,7 @@ const row = {
   id, name: "Newly published shirt", brand: "New brand", category: "T_SHIRT",
   colors: ["black"], sizes: ["M"], image: "",
   offers: [{ store: "Retailer", price: 27, originalPrice: 40, shippingCost: 0,
-    sizesInStock: ["M"], lastUpdated: new Date("2026-10-30"),
+    currency: "USD", sizesInStock: ["M"], lastUpdated: new Date("2026-10-30"),
     url: "https://example.test/shirt", status: "active" }],
 };
 let rows: typeof row[];

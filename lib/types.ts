@@ -5,6 +5,8 @@ export interface Offer {
   price: number;
   originalPrice: number;
   shippingCost: number;
+  /** Currency is explicit at the application boundary; all live offers are USD in this phase. */
+  currency?: string;
   sizesInStock: string[];
   lastUpdated: string; // ISO date
   url: string;

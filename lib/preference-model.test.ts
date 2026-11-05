@@ -23,7 +23,7 @@ function product(id: string, brand: string, category: Product["category"], color
     sizes: ["M"],
     image: "",
     offers: [
-      { store: brand, price, originalPrice: price, shippingCost: 0, sizesInStock: ["M"], lastUpdated: "2026-09-30", url: "#" },
+      { store: brand, price, originalPrice: price, shippingCost: 0, currency: "USD", sizesInStock: ["M"], lastUpdated: "2026-09-30", url: "#" },
     ],
   };
 }

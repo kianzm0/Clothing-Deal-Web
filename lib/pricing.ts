@@ -1,11 +1,14 @@
+import { isSupportedCurrency } from "./currency";
 import { Offer, Product } from "./types";
 
 export function bestOffer(product: Product): Offer {
-  return [...product.offers].sort((a, b) => a.price + a.shippingCost - (b.price + b.shippingCost))[0];
+  return product.offers
+    .filter(offer => isSupportedCurrency(offer.currency))
+    .sort((a, b) => a.price + a.shippingCost - (b.price + b.shippingCost))[0];
 }
 
 export function discountPct(offer: Offer): number {
-  if (offer.originalPrice <= 0) return 0;
+  if (!isSupportedCurrency(offer.currency) || offer.originalPrice <= 0) return 0;
   return Math.round(((offer.originalPrice - offer.price) / offer.originalPrice) * 100);
 }
 

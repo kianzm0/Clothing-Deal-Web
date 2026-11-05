@@ -10,7 +10,7 @@ const now = new Date("2026-10-29T12:00:00Z");
 const prefs = { ...DEFAULT_PREFERENCES, maxBudget: 100, sizes: ["M"] };
 function product(id: string, brand = "Nike", price = 40): Product {
   return { id, name: id, brand, category: "hoodie", colors: ["black"], sizes: ["M"], image: "",
-    offers: [{ store: "Shop", price, originalPrice: 80, shippingCost: 0, sizesInStock: ["M"], lastUpdated: now.toISOString(), url: "#" }] };
+    offers: [{ store: "Shop", price, originalPrice: 80, shippingCost: 0, sizesInStock: ["M"], lastUpdated: now.toISOString(), currency: "USD", url: "#" }] };
 }
 const order = (items: Product[]) => rankProducts(items, prefs, DEFAULT_WEIGHTS, EMPTY_PROFILE, +now).map(r => r.product.id);
 

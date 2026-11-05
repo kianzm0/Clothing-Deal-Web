@@ -1,9 +1,16 @@
 import { prisma } from "./prisma";
 import { ReviewOverrides } from "./review";
-import { scavengeProductUrl } from "./scavenger";
+import { ScavengerError, scavengeProductUrl } from "./scavenger";
+import { isSupportedCurrency } from "./currency";
 
 export async function ingestDealForProduct(productId: string, url: string, overrides: ReviewOverrides = {}) {
   const deal = await scavengeProductUrl(url);
+  if (!isSupportedCurrency(deal.currency)) {
+    throw new ScavengerError("Only verified USD offers can be ingested; hold this candidate for editorial review.", 422, {
+      currency: deal.currency,
+      reason: deal.currency === null ? "missing_or_invalid_currency" : "unsupported_currency",
+    });
+  }
   const existing = await prisma.offer.findFirst({ where: { productId, url: deal.canonicalUrl } });
   const priceCents = overrides.priceCents ?? deal.priceCents;
   const listPriceCents = overrides.listPriceCents ?? deal.listPriceCents;
