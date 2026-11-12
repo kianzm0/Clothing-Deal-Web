@@ -1,13 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { Exposure, EvaluationAction, RANKING_VERSION, RETENTION_MS, isAttributable } from "./evaluation";
+import { getActiveExperiment } from "./experiment-repository";
 
-// Serialize consent changes and writes for an account, including concurrent tabs.
 export async function evaluationTransaction<T>(userId: string, work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-  return prisma.$transaction(async tx => {
-    await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
-    return work(tx);
-  });
+  return prisma.$transaction(async tx => { await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`; return work(tx); });
 }
 export async function setEvaluationConsent(userId: string, enabled: boolean) {
   return evaluationTransaction(userId, async tx => {
@@ -21,20 +18,21 @@ export async function recordExposure(userId: string, exposure: Exposure) {
     if (!user?.evaluationEnabled) return { status: 403, error: "Evaluation is disabled." };
     const existing = await tx.recommendationImpression.findUnique({ where: { id: exposure.id } });
     if (existing) {
-      if (existing.userId !== userId || Object.entries(exposure).some(([key, value]) => existing[key as keyof typeof existing] !== value)) {
-        return { status: 409, error: "Impression ID conflict." };
-      }
+      const same = Object.entries(exposure).every(([key, value]) => existing[key as keyof typeof existing] === value);
+      if (existing.userId !== userId || !same) return { status: 409, error: "Impression ID conflict." };
       return { status: 200, id: existing.id };
     }
     const product = await tx.product.findUnique({ where: { id: exposure.productId }, select: { id: true } });
     if (!product) return { status: 404, error: "Unknown product." };
-    // Bound authenticated-client abuse. Duplicate retries do not consume this budget.
     const count = await tx.recommendationImpression.count({ where: { userId, createdAt: { gte: new Date(Date.now() - 3600000) } } });
     if (count >= 1000) return { status: 429, error: "Evaluation event limit reached." };
-    const row = await tx.recommendationImpression.upsert({
-      where: { userId_viewId_productId: { userId, viewId: exposure.viewId, productId: exposure.productId } },
-      update: {}, create: { ...exposure, userId, rankingVersion: RANKING_VERSION },
-    });
+    const config = await getActiveExperiment(tx);
+    const trustedVariant = exposure.experimentId === config.id && exposure.experimentVariant &&
+      ["control", "bounded-novelty-v1"].includes(exposure.experimentVariant) ? exposure.experimentVariant : "control";
+    const row = await tx.recommendationImpression.create({ data: {
+      ...exposure, experimentId: config.id, experimentVariant: trustedVariant,
+      userId, rankingVersion: trustedVariant === "control" ? RANKING_VERSION : "personalized-v2-bounded-novelty",
+    }});
     return { status: 200, id: row.id };
   });
 }
@@ -45,8 +43,7 @@ export async function recordEvaluationOutcome(userId: string, impressionId: stri
     const impression = await tx.recommendationImpression.findUnique({ where: { id: impressionId } });
     const now = new Date();
     if (!impression || !isAttributable(impression, userId, productId, now)) return { status: 404, error: "No eligible impression." };
-    await tx.recommendationOutcome.upsert({ where: { impressionId_action: { impressionId, action } },
-      update: {}, create: { impressionId, action, createdAt: now } });
+    await tx.recommendationOutcome.upsert({ where: { impressionId_action: { impressionId, action } }, update: {}, create: { impressionId, action, createdAt: now } });
     return { status: 200 };
   });
 }
