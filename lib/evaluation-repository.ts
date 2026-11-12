@@ -18,7 +18,8 @@ export async function recordExposure(userId: string, exposure: Exposure) {
     if (!user?.evaluationEnabled) return { status: 403, error: "Evaluation is disabled." };
     const existing = await tx.recommendationImpression.findUnique({ where: { id: exposure.id } });
     if (existing) {
-      const same = Object.entries(exposure).every(([key, value]) => existing[key as keyof typeof existing] === value);
+      const comparable = ["viewId", "productId", "position", "resultCount", "sort", "filtered", "personalized", "displayedTotal"];
+      const same = comparable.every(key => existing[key as keyof typeof existing] === exposure[key as keyof typeof exposure]);
       if (existing.userId !== userId || !same) return { status: 409, error: "Impression ID conflict." };
       return { status: 200, id: existing.id };
     }
@@ -30,8 +31,11 @@ export async function recordExposure(userId: string, exposure: Exposure) {
     const trustedVariant = exposure.experimentId === config.id && exposure.experimentVariant &&
       ["control", "bounded-novelty-v1"].includes(exposure.experimentVariant) ? exposure.experimentVariant : "control";
     const row = await tx.recommendationImpression.create({ data: {
-      ...exposure, experimentId: config.id, experimentVariant: trustedVariant,
-      userId, rankingVersion: trustedVariant === "control" ? RANKING_VERSION : "personalized-v2-bounded-novelty",
+      id: exposure.id, viewId: exposure.viewId, productId: exposure.productId, position: exposure.position,
+      resultCount: exposure.resultCount, sort: exposure.sort, filtered: exposure.filtered,
+      personalized: exposure.personalized, displayedTotal: exposure.displayedTotal,
+      experimentId: config.id, experimentVariant: trustedVariant, userId,
+      rankingVersion: trustedVariant === "control" ? RANKING_VERSION : "personalized-v2-bounded-novelty",
     }});
     return { status: 200, id: row.id };
   });

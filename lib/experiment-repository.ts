@@ -10,13 +10,18 @@ export async function getActiveExperiment(db: Db = prisma): Promise<ExperimentCo
   return { id: row.id, enabled: row.enabled, allocationBps: row.allocationBps,
     controlPolicyVersion: row.controlPolicyVersion, treatmentPolicyVersion: row.treatmentPolicyVersion };
 }
-
 export async function getOrCreateAssignment(userId: string, db: Db = prisma): Promise<{ experimentId: string; variant: ExperimentVariant }> {
   const config = await getActiveExperiment(db);
   if (!config.enabled) return { experimentId: config.id, variant: "control" };
   const existing = await db.recommendationAssignment.findUnique({ where: { experimentId_userId: { experimentId: config.id, userId } } });
   if (existing) return { experimentId: existing.experimentId, variant: existing.variant as ExperimentVariant };
   const variant = assignVariant(userId, config);
-  const row = await db.recommendationAssignment.create({ data: { experimentId: config.id, userId, variant } });
-  return { experimentId: row.experimentId, variant: row.variant as ExperimentVariant };
+  try {
+    const row = await db.recommendationAssignment.create({ data: { experimentId: config.id, userId, variant } });
+    return { experimentId: row.experimentId, variant: row.variant as ExperimentVariant };
+  } catch (error) {
+    if ((error as { code?: string }).code !== "P2002") throw error;
+    const row = await db.recommendationAssignment.findUniqueOrThrow({ where: { experimentId_userId: { experimentId: config.id, userId } } });
+    return { experimentId: row.experimentId, variant: row.variant as ExperimentVariant };
+  }
 }
