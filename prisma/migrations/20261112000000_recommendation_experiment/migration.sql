@@ -23,5 +23,11 @@ ALTER TABLE "recommendation_assignments" ADD CONSTRAINT "recommendation_assignme
 ALTER TABLE "recommendation_assignments" ADD CONSTRAINT "recommendation_assignments_variant_check"
   CHECK ("variant" IN ('control', 'bounded-novelty-v1'));
 
+ALTER TABLE "recommendation_impressions"
+  ADD COLUMN "experimentId" TEXT,
+  ADD COLUMN "experimentVariant" TEXT;
+CREATE INDEX "recommendation_impressions_experimentId_experimentVariant_idx"
+  ON "recommendation_impressions"("experimentId", "experimentVariant");
+
 INSERT INTO "recommendation_experiments" ("id","enabled","allocationBps","controlPolicyVersion","treatmentPolicyVersion")
 VALUES ('recommendation-policy-v1', false, 0, 'personalized-v2', 'personalized-v2-bounded-novelty');
