@@ -8,157 +8,148 @@ datasource db {
 }
 
 enum Category {
-  T_SHIRT     @map("t-shirt")
-  HOODIE      @map("hoodie")
-  SWEATSHIRT  @map("sweatshirt")
+  T_SHIRT @map("t-shirt")
+  HOODIE @map("hoodie")
+  SWEATSHIRT @map("sweatshirt")
   LONG_SLEEVE @map("long-sleeve")
 }
-
-enum InteractionAction {
-  SAVE
-  UNSAVE
-  SKIP
-  CLICK_OUT
-}
-
+enum InteractionAction { SAVE UNSAVE SKIP CLICK_OUT }
 model Interaction {
-  id        String            @id @default(cuid())
-  userId    String
+  id String @id @default(cuid())
+  userId String
   productId String
-  action    InteractionAction
-  reward    Float
-  createdAt DateTime          @default(now())
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  action InteractionAction
+  reward Float
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
   @@map("interactions")
 }
-
 model BanditWeights {
-  userId    String   @id
-  weights   Float[]
+  userId String @id
+  weights Float[]
   updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@map("bandit_weights")
 }
-
 model WatchlistItem {
-  userId    String
+  userId String
   productId String
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@id([userId, productId])
   @@map("watchlist_items")
 }
-
 model Preference {
-  userId         String   @id
-  sizes          String[]
+  userId String @id
+  sizes String[]
   favoriteBrands String[]
   dislikedBrands String[]
-  colors         String[]
-  fits           String[]
-  maxBudget      Float    @default(200)
-  minDiscountPct Float    @default(0)
-  updatedAt      DateTime @updatedAt
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  colors String[]
+  fits String[]
+  maxBudget Float @default(200)
+  minDiscountPct Float @default(0)
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@map("preferences")
 }
-
-enum UserRole {
-  USER
-  EDITOR
-  ADMIN
-}
-
+enum UserRole { USER EDITOR ADMIN }
 model User {
-  id             String          @id @default(cuid())
-  email          String          @unique
-  name           String?
-  passwordHash   String
-  role           UserRole        @default(USER)
-  createdAt      DateTime        @default(now())
+  id String @id @default(cuid())
+  email String @unique
+  name String?
+  passwordHash String
+  role UserRole @default(USER)
+  createdAt DateTime @default(now())
   evaluationEnabled Boolean @default(false)
   recommendationImpressions RecommendationImpression[]
-  interactions   Interaction[]
-  banditWeights  BanditWeights?
+  interactions Interaction[]
+  banditWeights BanditWeights?
   watchlistItems WatchlistItem[]
-  preference     Preference?
-
+  preference Preference?
+  recommendationAssignments RecommendationAssignment[]
   @@map("users")
 }
-
 model Product {
-  id       String   @id
-  name     String
-  brand    String
+  id String @id
+  name String
+  brand String
   category Category
-  colors   String[]
-  sizes    String[]
-  image    String
-  offers   Offer[]
-
+  colors String[]
+  sizes String[]
+  image String
+  offers Offer[]
   @@map("products")
 }
-
 model Offer {
-  id            String   @id @default(cuid())
-  store         String
-  price         Float
+  id String @id @default(cuid())
+  store String
+  price Float
   originalPrice Float
-  shippingCost  Float
-  sizesInStock  String[]
-  lastUpdated   DateTime
-  url           String
-  productId     String
-  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  // Populated when this offer was created or refreshed by the link
-  // scavenger (lib/scavenger.ts) rather than entered by hand.
-  sourceUrl         String?
-  retailerDomain    String?
-  availability      String    @default("unknown")
-  status            String    @default("active")
-  confidence        Float?
-  extractionSources String[]  @default([])
-  lastScannedAt     DateTime?
-
+  shippingCost Float
+  sizesInStock String[]
+  lastUpdated DateTime
+  url String
+  productId String
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sourceUrl String?
+  retailerDomain String?
+  availability String @default("unknown")
+  status String @default("active")
+  confidence Float?
+  extractionSources String[] @default([])
+  lastScannedAt DateTime?
   @@index([productId])
   @@map("offers")
 }
-
-
-// Evaluation is separate from preference learning; impressions are not negative feedback.
+model RecommendationExperiment {
+  id String @id
+  enabled Boolean @default(false)
+  allocationBps Int @default(0)
+  controlPolicyVersion String
+  treatmentPolicyVersion String
+  createdAt DateTime @default(now())
+  assignments RecommendationAssignment[]
+  @@map("recommendation_experiments")
+}
+model RecommendationAssignment {
+  experimentId String
+  userId String
+  variant String
+  assignedAt DateTime @default(now())
+  experiment RecommendationExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([experimentId, userId])
+  @@index([userId])
+  @@map("recommendation_assignments")
+}
 model RecommendationImpression {
-  id             String   @id
-  userId         String
-  viewId         String
-  productId      String
-  position       Int
-  resultCount    Int
-  sort           String
-  filtered       Boolean
-  personalized   Boolean
+  id String @id
+  userId String
+  viewId String
+  productId String
+  position Int
+  resultCount Int
+  sort String
+  filtered Boolean
+  personalized Boolean
   displayedTotal Float
   rankingVersion String
-  createdAt      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  outcomes       RecommendationOutcome[]
-
+  experimentId String?
+  experimentVariant String?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outcomes RecommendationOutcome[]
   @@unique([userId, viewId, productId])
   @@index([createdAt])
+  @@index([experimentId, experimentVariant])
   @@map("recommendation_impressions")
 }
-
 model RecommendationOutcome {
   impressionId String
-  action       InteractionAction
-  createdAt    DateTime @default(now())
-  impression   RecommendationImpression @relation(fields: [impressionId], references: [id], onDelete: Cascade)
-
+  action InteractionAction
+  createdAt DateTime @default(now())
+  impression RecommendationImpression @relation(fields: [impressionId], references: [id], onDelete: Cascade)
   @@id([impressionId, action])
   @@map("recommendation_outcomes")
 }
