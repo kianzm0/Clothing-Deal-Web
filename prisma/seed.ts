@@ -31,6 +31,7 @@ async function main() {
         offers: {
           create: p.offers.map((o) => ({
             store: o.store,
+            currency: "USD",
             price: o.price,
             originalPrice: o.originalPrice,
             shippingCost: o.shippingCost,
@@ -54,3 +55,4 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+

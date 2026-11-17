@@ -1,3 +1,4 @@
+import { AccountInputError } from "./account-input";
 import { prisma } from "./prisma";
 import { DEFAULT_PREFERENCES, Preferences } from "./types";
 
@@ -7,11 +8,17 @@ export async function getWatchlistIds(userId: string): Promise<string[]> {
 }
 
 export async function addToWatchlist(userId: string, productId: string): Promise<void> {
-  await prisma.watchlistItem.upsert({
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+  if (!product) throw new AccountInputError("Product not found.", 404);
+  try { await prisma.watchlistItem.upsert({
     where: { userId_productId: { userId, productId } },
     update: {},
     create: { userId, productId },
-  });
+  }); } catch (error) {
+    // The product may have been deleted after the existence check.
+    if ((error as { code?: string }).code === "P2003") throw new AccountInputError("Product no longer available.", 404);
+    throw error;
+  }
 }
 
 export async function removeFromWatchlist(userId: string, productId: string): Promise<void> {
@@ -50,3 +57,4 @@ export async function savePreferences(userId: string, prefs: Preferences): Promi
     create: { userId, ...data },
   });
 }
+

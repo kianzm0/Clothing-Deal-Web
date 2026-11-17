@@ -14,10 +14,11 @@ export async function ingestDealForProduct(productId: string, url: string, overr
   const existing = await prisma.offer.findFirst({ where: { productId, url: deal.canonicalUrl } });
   const priceCents = overrides.priceCents ?? deal.priceCents;
   const listPriceCents = overrides.listPriceCents ?? deal.listPriceCents;
-  const priceDollars = priceCents !== null ? priceCents / 100 : existing?.price ?? 0;
-  const originalPriceDollars = listPriceCents !== null ? listPriceCents / 100 : existing?.originalPrice ?? priceDollars;
+  const priceDollars = priceCents !== null ? priceCents / 100 : Number(existing?.price ?? 0);
+  const originalPriceDollars = listPriceCents !== null ? listPriceCents / 100 : Number(existing?.originalPrice ?? priceDollars);
   const data = {
     store: deal.retailerName,
+    currency: deal.currency,
     price: priceDollars,
     originalPrice: originalPriceDollars,
     shippingCost: existing?.shippingCost ?? 0,
@@ -37,3 +38,4 @@ export async function ingestDealForProduct(productId: string, url: string, overr
     : await prisma.offer.create({ data: { ...data, productId } });
   return { deal, offer, created: !existing };
 }
+

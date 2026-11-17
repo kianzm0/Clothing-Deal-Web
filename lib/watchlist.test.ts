@@ -35,6 +35,7 @@ const row = {
 let rows: typeof row[];
 let session: { user: { id: string } } | null;
 beforeEach(() => {
+  stub(prisma.product, "findUnique", async () => ({ id: "p" }));
   rows = [structuredClone(row)];
   session = null;
   state = { ids: [], hydrated: true, toggle: (id) => {
@@ -160,3 +161,4 @@ test("account saves and removals remain scoped to the authenticated user", async
   assert.equal((await api.DELETE(request("DELETE"))).status, 200);
   assert.deepEqual(remove.mock.calls[0].arguments[0].where, { userId: "customer-1", productId: id });
 });
+

@@ -31,6 +31,8 @@ model Interaction {
   user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, createdAt, id])
+  @@index([userId, productId, createdAt])
   @@map("interactions")
 }
 
@@ -49,6 +51,9 @@ model WatchlistItem {
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
   @@id([userId, productId])
   @@map("watchlist_items")
 }
@@ -100,6 +105,9 @@ model Product {
   sizes    String[]
   image    String
   offers   Offer[]
+  watchlistItems WatchlistItem[]
+
+  @@index([category, brand, id])
 
   @@map("products")
 }
@@ -107,9 +115,10 @@ model Product {
 model Offer {
   id            String   @id @default(cuid())
   store         String
-  price         Float
-  originalPrice Float
-  shippingCost  Float
+  price         Decimal  @db.Decimal(14, 2)
+  originalPrice Decimal  @db.Decimal(14, 2)
+  shippingCost  Decimal  @db.Decimal(14, 2)
+  currency      String?  @default("USD")
   sizesInStock  String[]
   lastUpdated   DateTime
   url           String
@@ -162,3 +171,4 @@ model RecommendationOutcome {
   @@id([impressionId, action])
   @@map("recommendation_outcomes")
 }
+
