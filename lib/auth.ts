@@ -26,13 +26,13 @@ export const authOptions: AuthOptions = {
         const valid = await bcrypt.compare(credentials.password, user.passwordHash);
         if (!valid) return null;
 
-        return { id: user.id, email: user.email, name: user.name ?? undefined };
+        return { id: user.id, email: user.email, name: user.name ?? undefined, sessionVersion: user.sessionVersion };
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.id = user.id;
+      if (user) { token.id = user.id; token.sessionVersion = user.sessionVersion ?? 0; }
       return token;
     },
     async session({ session, token }) {
@@ -44,11 +44,14 @@ export const authOptions: AuthOptions = {
         try {
           const user = await prisma.user.findUnique({
             where: { id: token.id },
-            select: { role: true },
+            select: { role: true, sessionVersion: true },
           });
-          session.user.role = user?.role ?? "USER";
+          if (!user || (user.sessionVersion ?? 0) !== (token.sessionVersion ?? 0)) {
+            session.user.id = ""; session.user.email = null; session.user.name = null;
+          } else session.user.role = user.role;
         } catch {
-          // Keep ordinary account sessions usable, but hide editorial UI.
+          // Fail closed if session revocation cannot be checked.
+          session.user.id = "";
           console.error("Unable to load session permissions.");
         }
       }
@@ -56,4 +59,5 @@ export const authOptions: AuthOptions = {
     },
   },
 };
+
 

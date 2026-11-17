@@ -30,14 +30,13 @@ function toProduct(row: any): Product {
     // rather than in the UI, so nothing downstream has to know a
     // "needs_review" state exists — see lib/scavenger.ts.
     offers: row.offers
-      .filter((o: any) => o.status !== "needs_review")
+      .filter((o: any) => o.status !== "needs_review" && o.currency === "USD")
       .map((o: any): Offer => ({
         store: o.store,
-        price: o.price,
-        originalPrice: o.originalPrice,
-        shippingCost: o.shippingCost,
-        // Existing rows predate currency storage; preserve them as legacy USD until a reviewed migration adds the column.
-        currency: "USD",
+        price: Number(o.price),
+        originalPrice: Number(o.originalPrice),
+        shippingCost: Number(o.shippingCost),
+        currency: o.currency,
         sizesInStock: o.sizesInStock,
         lastUpdated: o.lastUpdated.toISOString(),
         url: o.url,
@@ -77,3 +76,4 @@ export async function getProductsByIds(ids: string[]): Promise<Product[]> {
   const rows = await prisma.product.findMany({ where: { id: { in: ids } }, include: { offers: true } });
   return rows.map(toProduct).filter((product) => product.offers.length > 0);
 }
+

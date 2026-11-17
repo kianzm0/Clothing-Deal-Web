@@ -40,6 +40,7 @@ export async function trainInteraction(userId: string, product: Product, action:
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       return await prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
         const [weights, profileBefore, storedPrefs, latest, recentCount] = await Promise.all([
           getWeights(userId, tx), loadPreferenceProfile(userId, tx),
           tx.preference.findUnique({ where: { userId } }),
@@ -68,3 +69,4 @@ export async function trainInteraction(userId: string, product: Product, action:
   }
   throw new Error("Unable to update recommendations");
 }
+

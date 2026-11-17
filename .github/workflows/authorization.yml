@@ -68,6 +68,14 @@ jobs:
         run: npx tsx scripts/test-evaluation.ts
         env:
           EVALUATION_TEST_DATABASE: "1"
+      - name: Verify catalog money and watchlist integrity
+        run: npx tsx scripts/test-catalog-integrity.ts
+        env:
+          CATALOG_TEST_DATABASE: "1"
+      - name: Verify recovery, revocation, deletion and retention
+        run: npx tsx scripts/test-account-lifecycle.ts
+        env:
+          ACCOUNT_TEST_DATABASE: "1"
       - name: Run authorization and existing tests
         id: tests
         run: npm test 2>&1 | tee /tmp/threadscout-tests.log
@@ -92,4 +100,5 @@ jobs:
               output: { title: passed ? 'Tests and types passed' : 'Validation failed', summary: 'Route, permission, and customer-feature regression results.', text: '```text\n' + text + '\n```' }
             });
       - run: npm run build
+
 

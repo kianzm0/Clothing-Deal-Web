@@ -11,6 +11,7 @@ function stub(obj: any, key: string, fn: (...args: any[]) => any) { const origin
 let session: any;
 let writes: ReturnType<typeof stub>[];
 beforeEach(() => {
+  stub(prisma.product, "findUnique", async () => ({ id: "p" }));
   session = { user: { id: "owner" } };
   stub(nextAuth, "getServerSession", async () => session);
   stub(prisma.user, "findUnique", async () => null);
@@ -42,3 +43,4 @@ test("database failures return recoverable responses without internals", async (
     const res = await route(request(body)); assert.equal(res.status, 503); assert.doesNotMatch(await res.text(), /private database/);
   }
 });
+

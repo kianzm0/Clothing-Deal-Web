@@ -4,6 +4,7 @@ import type { UserRole } from "@prisma/client";
 // Extends the built-in session type so `session.user.id` is typed
 // without needing casts anywhere it's read.
 declare module "next-auth" {
+  interface User { sessionVersion?: number; }
   interface Session {
     user: {
       id: string;
@@ -15,5 +16,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     id?: string;
+    sessionVersion?: number;
   }
 }
+

@@ -58,6 +58,7 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
+        <Link href="/account/recovery" className="mt-3 block text-sm underline">Forgot password?</Link>
       </div>
       <p className="mt-4 text-center text-sm text-ink-500">
         No account? <Link href="/signup" className="font-medium text-brand-600 hover:underline">Sign up</Link>
@@ -65,3 +66,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
