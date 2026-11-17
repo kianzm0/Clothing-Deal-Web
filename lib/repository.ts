@@ -1,6 +1,8 @@
+import { Prisma } from "@prisma/client";
+import { CATALOG_PAGE_SIZE, CatalogQuery } from "./catalog-query";
 import { prisma } from "./prisma";
 import { Category, Offer, Product } from "./types";
-import { catalogAttributesFromProducts, CatalogAttributes } from "./catalog-options";
+import { CatalogAttributes } from "./catalog-options";
 
 // This is the file that changed for Phase 3. Pages still call only
 // getAllProducts() / getProductById() — nothing in app/ or
@@ -52,12 +54,41 @@ function toProduct(row: any): Product {
 }
 
 export async function getAllProducts(): Promise<Product[]> {
-  const rows = await prisma.product.findMany({ include: { offers: true } });
+  const rows = await prisma.product.findMany({ take: 100, orderBy: { id: "asc" }, include: { offers: true } });
   return rows.map(toProduct).filter((product) => product.offers.length > 0);
 }
 
 export async function getCatalogAttributes(): Promise<CatalogAttributes> {
-  return catalogAttributesFromProducts(await getAllProducts());
+  const rows = await prisma.$queryRaw<{ kind: string; value: string }[]>`
+    WITH visible AS (
+      SELECT brand, colors, sizes FROM products p WHERE EXISTS
+      (SELECT 1 FROM offers o WHERE o."productId" = p.id AND o.status <> 'needs_review' AND o.currency = 'USD')
+    )
+    (SELECT DISTINCT 'brand' AS kind, brand AS value FROM visible WHERE brand <> '' ORDER BY value LIMIT 1000)
+    UNION ALL (SELECT DISTINCT 'color' AS kind, unnest(colors) AS value FROM visible ORDER BY value LIMIT 1000)
+    UNION ALL (SELECT DISTINCT 'size' AS kind, unnest(sizes) AS value FROM visible ORDER BY value LIMIT 1000)`;
+  const values = (kind: string) => rows.filter(r => r.kind === kind && r.value).map(r => r.value).sort((a,b) => a.localeCompare(b));
+  return { brands: values("brand"), colors: values("color"), sizes: values("size") };
+}
+
+export async function getCatalogPage(query: CatalogQuery) {
+  // Keyset pagination does not need a cursor row to still exist. All values are parameters.
+  const ids = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT p.id FROM products p WHERE p.id > ${query.after ?? ""}
+    ${query.brand ? Prisma.sql`AND p.brand = ${query.brand}` : Prisma.empty}
+    ${query.category ? Prisma.sql`AND p.category::text = ${query.category}` : Prisma.empty}
+    AND EXISTS (SELECT 1 FROM offers o WHERE o."productId" = p.id
+      AND o.currency = 'USD' AND o.status <> 'needs_review'
+      AND o.availability !~* 'out.?of.?stock|sold.?out|discontinued'
+      AND o.price >= 0 AND o."shippingCost" >= 0
+      AND o.price + o."shippingCost" <= ${query.maxPrice}
+      AND CASE WHEN o."originalPrice" > 0 THEN round(100 * (o."originalPrice" - o.price) / o."originalPrice") ELSE 0 END >= ${query.minDiscount})
+    ORDER BY p.id LIMIT ${CATALOG_PAGE_SIZE + 1}`);
+  const visible = ids.slice(0, CATALOG_PAGE_SIZE);
+  const products = await getProductsByIds(visible.map(r => r.id));
+  const byId = new Map(products.map(p => [p.id, p]));
+  return { products: visible.flatMap(r => byId.has(r.id) ? [byId.get(r.id)!] : []),
+    nextCursor: ids.length > CATALOG_PAGE_SIZE ? visible[visible.length - 1].id : null };
 }
 
 export async function getProductById(id: string): Promise<Product | undefined> {

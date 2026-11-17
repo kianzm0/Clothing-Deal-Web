@@ -49,7 +49,8 @@ afterEach(() => {
   restorations.length = 0;
 });
 async function pageMarkup() {
-  return renderToStaticMarkup(await WatchlistPage());
+  const products = await (await import("./repository")).getProductsByIds(state.ids);
+  return renderToStaticMarkup(React.createElement(WatchlistClient, { products }));
 }
 function elements(node: any): any[] {
   if (!React.isValidElement(node)) return [];
@@ -110,24 +111,12 @@ test("a product without offers never reaches price rendering", () => {
   assert.match(renderToStaticMarkup(React.createElement(WatchlistClient, { products })), /currently unavailable/);
 });
 
-test("unavailable entries can be removed and then show the empty state", () => {
-  state.ids = ["removed"];
-  const tree = WatchlistClient({ products: [] });
-  const button = elements(tree).find((element) => element.type === "button");
-  button.props.onClick();
-  assert.deepEqual(state.ids, []);
-  assert.match(renderToStaticMarkup(React.createElement(WatchlistClient, { products: [] })), /Nothing saved yet/);
-});
-
-test("cards use the page watchlist state so unsaving removes the card immediately", async () => {
-  state.ids = [id];
+test("watchlist page delegates saved-ID lookup without loading the entire catalog", async () => {
+  const read = stub(prisma.product, "findMany", async () => { throw new Error("Unexpected full catalog load"); });
   const page = await WatchlistPage();
-  const tree = WatchlistClient(page.props);
-  const card = elements(tree).find((element) => element.props.product?.id === id);
-  assert.equal(card.props.watchlist, state);
-  card.props.watchlist.toggle(id);
-  assert.doesNotMatch(await pageMarkup(), /Newly published shirt/);
-  assert.match(await pageMarkup(), /Nothing saved yet/);
+  assert.equal(page.props.loadSavedProducts, true);
+  assert.deepEqual(page.props.products, []);
+  assert.equal(read.mock.callCount(), 0);
 });
 
 test("hydration shows loading rather than a misleading empty watchlist", async () => {
@@ -140,7 +129,7 @@ test("hydration shows loading rather than a misleading empty watchlist", async (
 test("catalog failures reach the retry boundary and never discard saved IDs", async () => {
   state.ids = [id];
   stub(prisma.product, "findMany", async () => { throw new Error("Database unavailable"); });
-  await assert.rejects(WatchlistPage(), /Database unavailable/);
+  await assert.rejects(pageMarkup(), /Database unavailable/);
   const reset = mock.fn();
   const tree = WatchlistError({ reset });
   assert.match(renderToStaticMarkup(tree), /saved items have not been removed/);

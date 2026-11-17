@@ -202,7 +202,8 @@ for (const caller of ["visitor", "customer", "EDITOR", "ADMIN"] as const) {
       noEditorialSideEffects();
     } else {
       const page = await ReviewPage();
-      assert.equal(page.props.products[0].id, "product-1");
+      const review = React.Children.toArray(page.props.children).find((child: any) => child.props?.products) as React.ReactElement<{ products: { id: string }[] }>;
+      assert.equal(review.props.products[0].id, "product-1");
       assert.equal(productList.mock.callCount(), 1);
     }
   });
