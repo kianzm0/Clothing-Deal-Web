@@ -22,7 +22,7 @@ async function main() {
     assert.equal(changed.sessionVersion, 1); assert.ok(await bcrypt.compare(nextPassword, changed.passwordHash));
     const callback = authOptions.callbacks!.session!;
     const session = await callback({ session: { user: { id: user.id, role: "USER" }, expires: "" }, token: { id: user.id, sessionVersion: 0 } } as any);
-    assert.equal(session.user.id, "");
+    assert.equal((session as import("next-auth").Session).user.id, "");
     await consumeAccountToken(verify, "verify");
     assert.ok((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).emailVerifiedAt);
     await assert.rejects(authenticatedAccountAction(user.id, password, "delete"), /incorrect/);
