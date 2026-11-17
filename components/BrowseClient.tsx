@@ -5,7 +5,8 @@ import Link from "next/link";
 import type { CatalogQuery } from "@/lib/catalog-query";
 import { Product } from "@/lib/types";
 import { discountPct, daysSinceUpdate } from "@/lib/pricing";
-import { rankProducts } from "@/lib/ranking";
+import { rankWithPolicy } from "@/lib/recommendation-experiment";
+import { useExperiment } from "@/lib/useExperiment";
 import { recommendationOffer, totalPrice } from "@/lib/recommendation-offer";
 import { usePreferences } from "@/lib/store";
 import { useBandit } from "@/lib/useBandit";
@@ -20,6 +21,7 @@ export default function BrowseClient({ products, brands, query, nextCursor }: { 
   useEffect(() => { setFilters(previous => ({ ...initialFilters, sort: previous.sort })); }, [query.category, query.brand, query.maxPrice, query.minDiscount]);
   const { prefs } = usePreferences();
   const bandit = useBandit();
+  const experiment = useExperiment();
   function catalogUrl(next: Filters, after?: string) {
     const params = new URLSearchParams({ maxPrice: String(next.maxPrice), minDiscount: String(next.minDiscount) });
     if (next.category !== "all") params.set("category", next.category);
@@ -55,10 +57,10 @@ export default function BrowseClient({ products, brands, query, nextCursor }: { 
         list = [...list].sort((a, b) => daysSinceUpdate(recommendationOffer(a, prefs)!) - daysSinceUpdate(recommendationOffer(b, prefs)!));
         break;
       default:
-        return rankProducts(list, prefs, bandit.weights, bandit.profile);
+        return rankWithPolicy(list, prefs, bandit.weights, bandit.profile, bandit.signedIn ? experiment.variant : "control");
     }
     return list.map(product => ({ product, reasons: [] as string[] }));
-  }, [products, filters, prefs, bandit.weights, bandit.profile]);
+  }, [products, filters, prefs, bandit.weights, bandit.profile, bandit.signedIn, experiment.variant]);
 
   return (
     <div>
@@ -87,9 +89,11 @@ export default function BrowseClient({ products, brands, query, nextCursor }: { 
       )}
       <p className="mb-3 text-xs text-ink-500">Sorting and personalized ranking apply to this page of matching deals.</p>
       <RecommendationEvaluation
+        onConsentChange={experiment.changeConsent}
         viewKey={JSON.stringify(filters)}
         items={results.map(({ product }) => ({ productId: product.id, displayedTotal: totalPrice(recommendationOffer(product, prefs)!) }))}
         context={{ sort: filters.sort, personalized: bandit.signedIn,
+          ...(filters.sort === "best-match" && bandit.signedIn && experiment.experimentId ? { experimentId: experiment.experimentId, experimentVariant: experiment.variant } : {}),
           filtered: filters.category !== "all" || filters.brand !== "all" || filters.maxPrice !== DEFAULT_FILTERS.maxPrice || filters.minDiscount !== DEFAULT_FILTERS.minDiscount }}
       >
         {results.map(({ product: p, reasons }) => (

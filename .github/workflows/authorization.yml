@@ -80,6 +80,10 @@ jobs:
         run: npx tsx scripts/test-catalog-pagination.ts
         env:
           CATALOG_TEST_DATABASE: "1"
+      - name: Verify experimental assignment and exposure integrity
+        run: npx tsx scripts/test-experiments.ts
+        env:
+          EXPERIMENT_TEST_DATABASE: "1"
       - name: Run authorization and existing tests
         id: tests
         run: npm test 2>&1 | tee /tmp/threadscout-tests.log

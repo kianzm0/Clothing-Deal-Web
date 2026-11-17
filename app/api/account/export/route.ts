@@ -12,6 +12,7 @@ export async function GET(req: Request) {
     yield { section: "account", data: user, exportedAt: at };
     yield { section: "preferences", data: await prisma.preference.findUnique({ where: { userId } }) };
     yield { section: "weights", data: await prisma.banditWeights.findUnique({ where: { userId } }) };
+    yield { section: "experiments", data: await prisma.recommendationAssignment.findMany({ where: { userId } }) };
     let cursor = "";
     do {
       const rows = await prisma.watchlistItem.findMany({ where: { userId, productId: { gt: cursor }, createdAt: { lte: at } }, orderBy: { productId: "asc" }, take: 200 });

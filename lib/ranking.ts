@@ -8,7 +8,7 @@ export interface RankedProduct { product: Product; score: number; reasons: strin
 // Scores are calculated once, then a deterministic greedy diversity pass
 // spreads near-ties across brands/categories. No randomness inside sort.
 export function rankProducts(products: Product[], prefs: Preferences, weights = DEFAULT_WEIGHTS,
-  profile: PreferenceProfile = EMPTY_PROFILE, now = Date.now()): RankedProduct[] {
+  profile: PreferenceProfile = EMPTY_PROFILE, now = Date.now(), boundedNovelty = false): RankedProduct[] {
   const candidates = products.filter(p => recommendationOffer(p, prefs) && !profile.dismissed?.includes(p.id)).map(product => {
     const f = featurize(product, prefs, profile, now);
     const offer = recommendationOffer(product, prefs)!;
@@ -21,7 +21,7 @@ export function rankProducts(products: Product[], prefs: Preferences, weights = 
     if (f[9] > 0.5) reasons.push("Recently updated");
     // Explicit preferences remain effective even after noisy online training.
     const penalty = (f[2] ? 0.3 : 0) + (f[4] < 0 ? 0.2 : 0) + (f[6] < 0 ? 0.15 : 0);
-    return { product, score: predict(weights, f) - penalty, reasons: reasons.slice(0, 2) };
+    return { product, score: predict(weights, f) - penalty + (boundedNovelty ? 0.02 * Math.max(0, Math.min(1, f[9])) + 0.01 * Math.max(0, Math.min(1, f[5])) : 0), reasons: reasons.slice(0, 2) };
   });
   const result: RankedProduct[] = [];
   const brands = new Map<string, number>();
@@ -40,3 +40,4 @@ export function rankProducts(products: Product[], prefs: Preferences, weights = 
   }
   return result.concat(candidates.sort((a, b) => b.score - a.score || a.product.id.localeCompare(b.product.id)));
 }
+
