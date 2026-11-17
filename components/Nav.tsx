@@ -44,6 +44,7 @@ export default function Nav() {
 
           {status === "authenticated" ? (
             <span className="flex items-center gap-3 pl-1">
+              <NavLink href="/account">Account</NavLink>
               <span className="hidden text-ink-400 sm:inline">{session.user?.email}</span>
               <button
                 onClick={() => signOut()}
@@ -65,3 +66,4 @@ export default function Nav() {
     </header>
   );
 }
+

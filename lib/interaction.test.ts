@@ -21,6 +21,7 @@ const p: Product = { id: "p", name: "Hoodie", brand: "Nike", category: "hoodie",
 let latest: any, recentCount: number, session: any;
 let create: ReturnType<typeof stub>, upsert: ReturnType<typeof stub>, transaction: ReturnType<typeof stub>;
 beforeEach(() => {
+  stub(prisma, "$queryRaw", async () => []);
   latest = null; recentCount = 0; session = { user: { id: "user" } };
   stub(nextAuth, "getServerSession", async () => session);
   stub(prisma.product, "findUnique", async () => ({ ...p, category: "HOODIE", offers: p.offers.map(o => ({ ...o, lastUpdated: new Date(o.lastUpdated) })) }));
@@ -96,3 +97,4 @@ test("signed-out feedback is ignored and failed training returns a recoverable r
   transaction.mock.mockImplementation(async () => { throw new Error("unavailable"); });
   assert.equal((await POST(request({ productId: "p", action: "SAVE" }))).status, 503);
 });
+

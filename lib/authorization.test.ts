@@ -64,6 +64,7 @@ let network: ReturnType<typeof stub>;
 let roleRead: ReturnType<typeof stub>;
 
 beforeEach(() => {
+  stub(prisma, "$queryRaw", async () => []);
   session = userSession();
   databaseRole = "USER";
   existingOffer = false;
@@ -291,3 +292,4 @@ test("role provisioning requires one explicit existing ID and a valid role", asy
   assert.equal(update.mock.callCount(), 3);
   assert.equal(create.mock.callCount(), 0);
 });
+

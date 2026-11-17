@@ -84,6 +84,9 @@ model User {
   email          String          @unique
   name           String?
   passwordHash   String
+  sessionVersion Int @default(0)
+  emailVerifiedAt DateTime?
+  accountTokens AccountToken[]
   role           UserRole        @default(USER)
   createdAt      DateTime        @default(now())
   evaluationEnabled Boolean @default(false)
@@ -172,3 +175,15 @@ model RecommendationOutcome {
   @@map("recommendation_outcomes")
 }
 
+
+model AccountToken {
+  hash String @id
+  userId String
+  purpose String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, purpose, createdAt])
+  @@index([expiresAt])
+  @@map("account_tokens")
+}
