@@ -26,16 +26,15 @@ const row = (id: string, brand: string, colors: string[], sizes: string[], statu
 });
 
 beforeEach(() => {
-  stub(prisma.product, "findMany", async () => []);
+  stub(prisma, "$queryRaw", async () => []);
 });
 afterEach(() => {
   while (restorations.length) restorations.pop()!();
 });
 
 test("attributes come from the current visible catalog, including newly published values", async () => {
-  const read = stub(prisma.product, "findMany", async () => [
-    row("old", "Everlane", ["black"], ["M"]),
-    row("new", "New Brand", ["cobalt"], ["XXL"]),
+  const read = stub(prisma, "$queryRaw", async () => [
+    {kind:"brand",value:"Everlane"}, {kind:"brand",value:"New Brand"}, {kind:"color",value:"black"}, {kind:"color",value:"cobalt"}, {kind:"size",value:"M"}, {kind:"size",value:"XXL"}
   ]);
   assert.deepEqual(await getCatalogAttributes(), {
     brands: ["Everlane", "New Brand"],
@@ -58,7 +57,8 @@ test("catalog refresh reflects removals while saved values remain selectable", (
 });
 
 test("empty and review-only catalogs produce empty option lists", async () => {
-  const read = stub(prisma.product, "findMany", async () => [row("held", "Held Brand", ["green"], ["L"], "needs_review")]);
+  const read = stub(prisma, "$queryRaw", async () => []);
   assert.deepEqual(await getCatalogAttributes(), { brands: [], colors: [], sizes: [] });
   assert.equal(read.mock.callCount(), 1);
 });
+
