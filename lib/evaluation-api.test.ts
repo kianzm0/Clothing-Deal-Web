@@ -18,6 +18,7 @@ beforeEach(() => {
   stub(nextAuth, "getServerSession", async () => session);
   stub(prisma, "$transaction", async fn => fn(prisma));
   stub(prisma, "$queryRaw", async () => []);
+  stub(prisma.recommendationAssignment, "deleteMany", async () => ({ count: 0 }));
   stub(prisma.user, "findUnique", async () => ({ evaluationEnabled: enabled }));
   stub(prisma.user, "update", async ({ data }) => { enabled = data.evaluationEnabled; });
   stub(prisma.product, "findUnique", async () => product);
@@ -88,3 +89,4 @@ test("retention requires a configured bearer secret", async () => {
     assert.ok(deletes.mock.calls[0].arguments[0].where.createdAt.lt instanceof Date);
   } finally { if (original === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = original; }
 });
+

@@ -1,8 +1,12 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import type { CatalogQuery } from "@/lib/catalog-query";
 import { Product } from "@/lib/types";
 import { discountPct, daysSinceUpdate } from "@/lib/pricing";
-import { rankProducts } from "@/lib/ranking";
+import { rankWithPolicy } from "@/lib/recommendation-experiment";
+import { useExperiment } from "@/lib/useExperiment";
 import { recommendationOffer, totalPrice } from "@/lib/recommendation-offer";
 import { usePreferences } from "@/lib/store";
 import { useBandit } from "@/lib/useBandit";
@@ -10,15 +14,25 @@ import FilterBar, { DEFAULT_FILTERS, Filters } from "./FilterBar";
 import ProductCard from "./ProductCard";
 import RecommendationEvaluation from "./RecommendationEvaluation";
 
-export default function BrowseClient({ products }: { products: Product[] }) {
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+export default function BrowseClient({ products, brands, query, nextCursor }: { products: Product[]; brands: string[]; query: CatalogQuery; nextCursor: string | null }) {
+  const router = useRouter();
+  const initialFilters = { ...DEFAULT_FILTERS, category: query.category ?? "all" as const, brand: query.brand ?? "all", maxPrice: query.maxPrice, minDiscount: query.minDiscount };
+  const [filters, setFilters] = useState<Filters>(initialFilters);
+  useEffect(() => { setFilters(previous => ({ ...initialFilters, sort: previous.sort })); }, [query.category, query.brand, query.maxPrice, query.minDiscount]);
   const { prefs } = usePreferences();
   const bandit = useBandit();
-
-  const brands = useMemo(
-    () => Array.from(new Set(products.map((p) => p.brand))).sort(),
-    [products]
-  );
+  const experiment = useExperiment();
+  function catalogUrl(next: Filters, after?: string) {
+    const params = new URLSearchParams({ maxPrice: String(next.maxPrice), minDiscount: String(next.minDiscount) });
+    if (next.category !== "all") params.set("category", next.category);
+    if (next.brand !== "all") params.set("brand", next.brand);
+    if (after) params.set("after", after);
+    return `/?${params}`;
+  }
+  function changeFilters(next: Filters) {
+    setFilters(next);
+    if (next.category !== filters.category || next.brand !== filters.brand || next.maxPrice !== filters.maxPrice || next.minDiscount !== filters.minDiscount) router.replace(catalogUrl(next));
+  }
 
   const results = useMemo(() => {
     let list = products.filter((p) => {
@@ -43,10 +57,10 @@ export default function BrowseClient({ products }: { products: Product[] }) {
         list = [...list].sort((a, b) => daysSinceUpdate(recommendationOffer(a, prefs)!) - daysSinceUpdate(recommendationOffer(b, prefs)!));
         break;
       default:
-        return rankProducts(list, prefs, bandit.weights, bandit.profile);
+        return rankWithPolicy(list, prefs, bandit.weights, bandit.profile, bandit.signedIn ? experiment.variant : "control");
     }
     return list.map(product => ({ product, reasons: [] as string[] }));
-  }, [products, filters, prefs, bandit.weights, bandit.profile]);
+  }, [products, filters, prefs, bandit.weights, bandit.profile, bandit.signedIn, experiment.variant]);
 
   return (
     <div>
@@ -55,14 +69,14 @@ export default function BrowseClient({ products }: { products: Product[] }) {
           Today's best clothing deals
         </h1>
         <p className="mt-1 text-sm text-ink-500">
-          Prices compared across stores, updated continuously.
+          Compare clothing prices across stores.
         </p>
       </div>
 
-      <FilterBar filters={filters} brands={brands} onChange={setFilters} />
+      <FilterBar filters={filters} brands={brands} onChange={changeFilters} />
 
       <p className="mb-3 text-sm text-ink-500">
-        {results.length} results
+        {results.length} results on this page
         {bandit.signedIn && filters.sort === "best-match" && (
           <span className="ml-2 text-xs font-medium text-brand-600">· learning from your activity</span>
         )}
@@ -73,17 +87,22 @@ export default function BrowseClient({ products }: { products: Product[] }) {
           No deals match right now. Try widening your filters or checking back for new offers.
         </p>
       )}
+      <p className="mb-3 text-xs text-ink-500">Sorting and personalized ranking apply to this page of matching deals.</p>
       <RecommendationEvaluation
+        onConsentChange={experiment.changeConsent}
         viewKey={JSON.stringify(filters)}
         items={results.map(({ product }) => ({ productId: product.id, displayedTotal: totalPrice(recommendationOffer(product, prefs)!) }))}
         context={{ sort: filters.sort, personalized: bandit.signedIn,
+          ...(filters.sort === "best-match" && bandit.signedIn && experiment.experimentId ? { experimentId: experiment.experimentId, experimentVariant: experiment.variant } : {}),
           filtered: filters.category !== "all" || filters.brand !== "all" || filters.maxPrice !== DEFAULT_FILTERS.maxPrice || filters.minDiscount !== DEFAULT_FILTERS.minDiscount }}
       >
         {results.map(({ product: p, reasons }) => (
           <ProductCard key={p.id} product={p} onInteract={bandit.recordInteraction} prefs={prefs} reasons={reasons} />
         ))}
       </RecommendationEvaluation>
+      <div className="mt-6 flex gap-4">{query.after && <Link href={catalogUrl(filters)}>First page</Link>}{nextCursor && <Link href={catalogUrl(filters, nextCursor)}>Next page</Link>}</div>
     </div>
   );
 }
+
 

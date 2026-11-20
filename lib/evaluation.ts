@@ -6,6 +6,7 @@ export const SORTS = ["best-match", "lowest-price", "biggest-discount", "freshes
 export const ACTIONS = ["SAVE", "UNSAVE", "SKIP", "CLICK_OUT"] as const;
 export type EvaluationAction = typeof ACTIONS[number];
 export type Exposure = {
+  experimentId?: string; experimentVariant?: "control" | "bounded-novelty-v1";
   id: string; viewId: string; productId: string; position: number; resultCount: number;
   sort: typeof SORTS[number]; filtered: boolean; personalized: boolean; displayedTotal: number;
 };
@@ -18,9 +19,11 @@ export function parseExposure(value: unknown): Exposure | null {
     !Number.isInteger(v.position) || v.position < 1 || !Number.isInteger(v.resultCount) || v.resultCount < v.position || v.resultCount > 10000 ||
     !SORTS.includes(v.sort) || typeof v.filtered !== "boolean" || typeof v.personalized !== "boolean" ||
     !Number.isFinite(v.displayedTotal) || v.displayedTotal < 0 || v.displayedTotal > 1000000) return null;
+  if ((v.experimentId !== undefined || v.experimentVariant !== undefined) &&
+      (v.experimentId !== "recommendation-policy-v1" || !["control", "bounded-novelty-v1"].includes(v.experimentVariant ?? ""))) return null;
   // Explicit allowlist: never persist arbitrary client metadata or preferences.
   return { id: v.id, viewId: v.viewId, productId: v.productId, position: v.position, resultCount: v.resultCount,
-    sort: v.sort, filtered: v.filtered, personalized: v.personalized, displayedTotal: v.displayedTotal };
+    sort: v.sort, filtered: v.filtered, personalized: v.personalized, displayedTotal: v.displayedTotal, ...(v.experimentId ? { experimentId: v.experimentId, experimentVariant: v.experimentVariant } : {}) };
 }
 export function isAttributable(impression: { userId: string; productId: string; createdAt: Date }, userId: string, productId: string, now: Date) {
   const age = now.getTime() - impression.createdAt.getTime();
@@ -40,3 +43,4 @@ export function evaluationMetrics(rows: MetricRow[], asOf = new Date()) {
     skipRate: impressions ? skips / impressions : null,
     unsaveRate: impressions ? unsaves / impressions : null };
 }
+

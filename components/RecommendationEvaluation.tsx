@@ -5,9 +5,9 @@ import type { ReactNode } from "react";
 import type { Exposure } from "@/lib/evaluation";
 import { clearAttribution, ExposureRecorder, observeCards, sendEvaluation } from "@/lib/evaluation-client";
 
-type Context = Pick<Exposure, "sort" | "filtered" | "personalized">;
-export default function RecommendationEvaluation({ items, context, viewKey, children }: {
-  viewKey: string; items: { productId: string; displayedTotal: number }[]; context: Context; children: ReactNode;
+type Context = Pick<Exposure, "sort" | "filtered" | "personalized" | "experimentId" | "experimentVariant">;
+export default function RecommendationEvaluation({ items, context, viewKey, children, onConsentChange }: {
+  viewKey: string; items: { productId: string; displayedTotal: number }[]; context: Context; children: ReactNode; onConsentChange?: (enabled: boolean) => void;
 }) {
   const { data: session, status } = useSession();
   const userId = status === "authenticated" ? session?.user?.id : undefined;
@@ -54,11 +54,12 @@ export default function RecommendationEvaluation({ items, context, viewKey, chil
   async function changeConsent(next: boolean) {
     if (!userId) return;
     setBusy(true); setError("");
-    if (!next) { snapshot.recorder?.stop(); clearAttribution(); setConsent({ userId, enabled: false }); }
+    if (!next) { onConsentChange?.(false); snapshot.recorder?.stop(); clearAttribution(); setConsent({ userId, enabled: false }); }
     try {
       const res = await sendEvaluation({ type: "consent", enabled: next });
       if (!res.ok) throw new Error();
       setConsent({ userId, enabled: next });
+      onConsentChange?.(next);
     } catch { setError("Could not save your choice. Please try again."); }
     finally { setBusy(false); }
   }
@@ -66,7 +67,7 @@ export default function RecommendationEvaluation({ items, context, viewKey, chil
     {userId && <div className="mb-4 rounded-xl border border-ink-100 p-3 text-sm text-ink-600">
       <label className="flex items-start gap-2">
         <input type="checkbox" checked={enabled} disabled={busy || loading} onChange={e => void changeConsent(e.target.checked)} />
-        <span>Help evaluate recommendations. Record visible products, their positions, prices, and related saves, unsaves, skips and retailer clicks for 30 days (deleted at the next daily cleanup), linked to your account. Turning this off deletes this evaluation history. Your recommendations work either way.</span>
+        <span>Help evaluate recommendations. Record visible products, their positions, prices, and related saves, unsaves, skips and retailer clicks for 30 days (deleted at the next daily cleanup), linked to your account. Turning this off deletes this evaluation history. You may be assigned to one of two recommendation ordering policies; assignment is kept while you participate and removed when you turn this off. Your recommendations work either way.</span>
       </label>
       <button type="button" disabled={busy || loading} onClick={() => void changeConsent(false)} className="mt-2 underline">Turn off and delete evaluation history</button>
       {error && <p role="alert">{error}</p>}
@@ -74,3 +75,4 @@ export default function RecommendationEvaluation({ items, context, viewKey, chil
     <div ref={root} className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">{children}</div>
   </>;
 }
+

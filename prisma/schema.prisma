@@ -87,6 +87,7 @@ model User {
   sessionVersion Int @default(0)
   emailVerifiedAt DateTime?
   accountTokens AccountToken[]
+  recommendationAssignments RecommendationAssignment[]
   role           UserRole        @default(USER)
   createdAt      DateTime        @default(now())
   evaluationEnabled Boolean @default(false)
@@ -156,12 +157,15 @@ model RecommendationImpression {
   personalized   Boolean
   displayedTotal Float
   rankingVersion String
+  experimentId String?
+  experimentVariant String?
   createdAt      DateTime @default(now())
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   outcomes       RecommendationOutcome[]
 
   @@unique([userId, viewId, productId])
   @@index([createdAt])
+  @@index([experimentId, experimentVariant])
   @@map("recommendation_impressions")
 }
 
@@ -186,4 +190,27 @@ model AccountToken {
   @@index([userId, purpose, createdAt])
   @@index([expiresAt])
   @@map("account_tokens")
+}
+
+model RecommendationExperiment {
+  id String @id
+  enabled Boolean @default(false)
+  allocationBps Int @default(0)
+  controlPolicyVersion String
+  treatmentPolicyVersion String
+  createdAt DateTime @default(now())
+  assignments RecommendationAssignment[]
+  @@map("recommendation_experiments")
+}
+model RecommendationAssignment {
+  experimentId String
+  userId String
+  variant String
+  allocationBps Int
+  assignedAt DateTime @default(now())
+  experiment RecommendationExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([experimentId, userId])
+  @@index([userId])
+  @@map("recommendation_assignments")
 }
